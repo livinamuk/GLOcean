@@ -1,0 +1,28 @@
+#version 430 core
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(binding = 0) uniform sampler2D hairCompositeTexture;
+layout(binding = 1) uniform sampler2D lightingTexture;
+layout(rgba8, binding = 0) uniform image2D outputImage;
+
+void main() {
+	ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);   
+    ivec2 outputImageSize = imageSize(outputImage);
+    vec2 uv_screenspace = vec2(pixelCoords) / vec2(outputImageSize);
+
+    // Don't process out of bounds pixels
+    if (pixelCoords.x >= outputImageSize.x || pixelCoords.y >= outputImageSize.y) {
+        return;
+    }    
+    // Inputs
+    vec4 hairComposite = texture(hairCompositeTexture, uv_screenspace);
+    vec4 lighting = texture(lightingTexture, uv_screenspace);
+
+    // Perform alpha compositing (hair over lighting)
+    vec3 blendedColor = hairComposite.rgb * hairComposite.a + lighting.rgb * (1.0 - hairComposite.a);
+    float blendedAlpha = hairComposite.a + lighting.a * (1.0 - hairComposite.a);
+    
+    // Write the final composited color back to the lighting texture
+    vec4 finalOutput = vec4(blendedColor, blendedAlpha);
+    
+    imageStore(outputImage, pixelCoords, finalOutput);
+}

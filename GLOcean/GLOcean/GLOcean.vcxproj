@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\API\OpenGL\GL_backend.cpp" />
+    <ClCompile Include="src\API\OpenGL\GL_renderer.cpp" />
+    <ClCompile Include="src\API\OpenGL\GL_renderer_debug.cpp" />
+    <ClCompile Include="src\API\OpenGL\Types\GL_mesh_patch.cpp" />
+    <ClCompile Include="src\API\OpenGL\Types\GL_shader.cpp" />
+    <ClCompile Include="src\API\OpenGL\Types\GL_texture.cpp" />
+    <ClCompile Include="src\Core\Audio.cpp" />
+    <ClCompile Include="src\AssetManagement\BakeQueue.cpp" />
+    <ClCompile Include="src\Core\Camera.cpp" />
+    <ClCompile Include="src\File\AssimpImporter.cpp" />
+    <ClCompile Include="src\File\File.cpp" />
+    <ClCompile Include="src\Ocean\FFTSolver.cpp" />
+    <ClCompile Include="src\Ocean\GLFFT\glfft.cpp" />
+    <ClCompile Include="src\Ocean\GLFFT\glfft_gl_interface.cpp" />
+    <ClCompile Include="src\Ocean\GLFFT\glfft_wisdom.cpp" />
+    <ClCompile Include="src\Ocean\Ocean.cpp" />
+    <ClCompile Include="src\Types\GameObject.cpp" />
+    <ClCompile Include="src\Input\Input.cpp" />
+    <ClCompile Include="src\Main.cpp" />
+    <ClCompile Include="src\AssetManagement\AssetManager.cpp" />
+    <ClCompile Include="src\TextBlitting\FontSpriteSheet.cpp" />
+    <ClCompile Include="src\TextBlitting\TextBlitter.cpp" />
+    <ClCompile Include="src\Types\Texture.cpp" />
+    <ClCompile Include="src\Tools\ImageTools.cpp" />
+    <ClCompile Include="vendor\glad\src\glad.c" />
+    <ClCompile Include="vendor\stb_image\stb_image.cpp" />
+    <ClCompile Include="vendor\tinyexr\tinyexr.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="res\shaders\common\constants.glsl" />
+    <None Include="res\shaders\OpenGL\gl_hair_final_composite.comp" />
+    <None Include="res\shaders\OpenGL\gl_hair_depth_peel.frag" />
+    <None Include="res\shaders\OpenGL\gl_hair_depth_peel.vert" />
+    <None Include="res\shaders\OpenGL\gl_hair_layer_composite.comp" />
+    <None Include="res\shaders\OpenGL\gl_solid_color.frag" />
+    <None Include="res\shaders\OpenGL\gl_solid_color.vert" />
+    <None Include="res\shaders\OpenGL\gl_text_blitter.frag" />
+    <None Include="res\shaders\OpenGL\gl_text_blitter.vert" />
+    <None Include="res\shaders\common\pbr_functions.glsl" />
+    <None Include="res\shaders\terrain.frag" />
+    <None Include="res\shaders\terrain.vert" />
+    <None Include="res\shaders\skybox.frag" />
+    <None Include="res\shaders\skybox.vert" />
+    <None Include="res\shaders\OpenGL\gl_lighting.frag" />
+    <None Include="res\shaders\OpenGL\gl_lighting.vert" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\API\OpenGL\GL_backend.h" />
+    <ClInclude Include="src\API\OpenGL\GL_renderer.h" />
+    <ClInclude Include="src\API\OpenGL\GL_util.hpp" />
+    <ClInclude Include="src\API\OpenGL\Types\GL_detachedMesh.hpp" />
+    <ClInclude Include="src\API\OpenGL\Types\GL_fontMesh.hpp" />
+    <ClInclude Include="src\API\OpenGL\Types\GL_frameBuffer.hpp" />
+    <ClInclude Include="src\API\OpenGL\Types\GL_pbo.hpp" />
+    <ClInclude Include="src\API\OpenGL\Types\GL_shader.h" />
+    <ClInclude Include="src\API\OpenGL\Types\GL_texture.h" />
+    <ClInclude Include="src\Core\Audio.h" />
+    <ClInclude Include="src\AssetManagement\BakeQueue.h" />
+    <ClInclude Include="src\Core\Camera.h" />
+    <ClInclude Include="src\File\AssimpImporter.h" />
+    <ClInclude Include="src\File\File.h" />
+    <ClInclude Include="src\File\FileFormats.h" />
+    <ClInclude Include="src\Ocean\FFTSolver.h" />
+    <ClInclude Include="src\Ocean\GLFFT\glfft.hpp" />
+    <ClInclude Include="src\Ocean\GLFFT\glfft_common.hpp" />
+    <ClInclude Include="src\Ocean\GLFFT\glfft_gl_api_headers.hpp" />
+    <ClInclude Include="src\Ocean\GLFFT\glfft_gl_interface.hpp" />
+    <ClInclude Include="src\Ocean\GLFFT\glfft_interface.hpp" />
+    <ClInclude Include="src\Ocean\GLFFT\glfft_wisdom.hpp" />
+    <ClInclude Include="src\Ocean\Ocean.h" />
+    <ClInclude Include="src\Types\GameObject.h" />
+    <ClInclude Include="src\Hardcoded.hpp" />
+    <ClInclude Include="src\AssetManagement\AssetManager.h" />
+    <ClInclude Include="src\Common\Common.h" />
+    <ClInclude Include="src\Common\Enums.h" />
+    <ClInclude Include="src\Common\Primtives.hpp" />
+    <ClInclude Include="src\Input\Input.h" />
+    <ClInclude Include="src\Input\keycodes.h" />
+    <ClInclude Include="src\learnopengl\animation.h" />
+    <ClInclude Include="src\learnopengl\animator.h" />
+    <ClInclude Include="src\learnopengl\animdata.h" />
+    <ClInclude Include="src\learnopengl\assimp_glm_helpers.h" />
+    <ClInclude Include="src\learnopengl\bone.h" />
+    <ClInclude Include="src\learnopengl\camera.h" />
+    <ClInclude Include="src\learnopengl\entity.h" />
+    <ClInclude Include="src\learnopengl\mesh.h" />
+    <ClInclude Include="src\learnopengl\model.h" />
+    <ClInclude Include="src\learnopengl\model_animation.h" />
+    <ClInclude Include="src\TextBlitting\FontSpriteSheet.h" />
+    <ClInclude Include="src\TextBlitting\TextBlitter.h" />
+    <ClInclude Include="src\Tools\DDS.h" />
+    <ClInclude Include="src\Types\Model.hpp" />
+    <ClInclude Include="src\Core\Scene.hpp" />
+    <ClInclude Include="src\Tools\ImageTools.h" />
+    <ClInclude Include="src\Util.hpp" />
+    <ClInclude Include="src\Types\Texture.h" />
+    <ClInclude Include="src\Common\HellTypes.h" />
+    <ClInclude Include="vendor\stb_image\stb_image.h" />
+    <ClInclude Include="vendor\stb_image\stb_image_write.h" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{7b450427-c720-4b08-b545-47ec61219762}</ProjectGuid>
+    <RootNamespace>grafikaD2</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>GLOcean</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)\$(ProjectName)\Build\Release\</OutDir>
+    <IntDir>$(SolutionDir)\$(ProjectName)\Build\Intermediate\Release\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(SolutionDir)\$(ProjectName)\Build\Debug\</OutDir>
+    <IntDir>$(SolutionDir)\$(ProjectName)\Build\Intermediate\Debug\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>vendor\glad\include;vendor\GLFW\include;vendor\glm;vendor\stb_image;vendor\fmod\include;vendor\compressonator\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>vendor\GLFW\lib\Release;vendor\fmod\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>glfw3.lib;fmod_vc.lib;assimp-vc143-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>copy /Y "$(ProjectDir)vendor\DLLs\fmod.dll" "$(TargetDir)fmod.dll"
+copy /Y "$(ProjectDir)vendor\DLLs\assimp-vc143-mt.dll" "$(TargetDir)assimp-vc143-mt.dll"
+xcopy "$(ProjectDir)res\shaders" "$(TargetDir)res\shaders" /e /y /i /r</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>vendor\compressonator\include\;vendor\gli\include;src\Common;vendor\glad\include;vendor\GLFW\include;vendor\glm;vendor\stb_image;vendor\assimp\include;vendor;vendor\fmod\include;vendor\tinyexr;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>vendor\assimp\lib;vendor\GLFW\lib\Release;vendor\compressonator\lib;vendor\fmod\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>glfw3.lib;Compressonator_MD.lib;CMP_Framework_MD.lib;assimp-vc143-mt.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>copy /Y "$(ProjectDir)vendor\DLLs\fmod.dll" "$(TargetDir)fmod.dll"
+copy /Y "$(ProjectDir)vendor\DLLs\assimp-vc143-mt.dll" "$(TargetDir)assimp-vc143-mt.dll"
+xcopy "$(ProjectDir)res\shaders" "$(TargetDir)res\shaders" /e /y /i /r</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

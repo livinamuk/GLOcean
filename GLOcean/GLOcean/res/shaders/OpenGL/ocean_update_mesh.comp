@@ -1,0 +1,91 @@
+#version 430
+
+struct Complex
+{
+  float r;
+  float i;
+};
+
+Complex add(Complex a, Complex b)
+{
+  return Complex(a.r + b.r, a.i + b.i);
+}
+
+Complex mult(Complex a, Complex b)
+{
+  return Complex(a.r * b.r - a.i * b.i, a.r * b.i + a.i * b.r);
+}
+
+Complex conjugate(Complex a)
+{
+  return Complex(a.r, -a.i);
+}
+
+Complex eulerExp(float s)
+{
+  return Complex(cos(s), sin(s));
+}
+
+struct VertexPN
+{
+  float x, y, z;
+  float nx, ny, nz;
+};
+
+layout (std430, binding = 0) readonly restrict buffer BufferH
+{
+  Complex h[];
+};
+
+layout (std430, binding = 1) readonly restrict buffer BufferDispX
+{
+  Complex dispX[];
+};
+
+layout (std430, binding = 2) readonly restrict buffer BufferDispZ
+{
+  Complex dispZ[];
+};
+
+layout (std430, binding = 3) writeonly restrict buffer BufferMesh
+{
+  VertexPN mesh[];
+};
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+uniform uvec2 oceanSize;
+uniform uvec2 meshSize; 
+uniform float dispFactor;
+
+void main() {
+    uvec2 gid = gl_GlobalInvocationID.xy;
+
+    // Bail if out of bounds
+    if (gid.x >= meshSize.x || gid.y >= meshSize.y) {
+        return;
+    }
+
+    uint vertIndex = gid.y * meshSize.x + gid.x;
+
+    ivec2 offset = ivec2(gid) - ivec2(meshSize)/2;
+
+    uint ox = uint((offset.x % int(oceanSize.x) + int(oceanSize.x)) % int(oceanSize.x));
+    uint oz = uint((offset.y % int(oceanSize.y) + int(oceanSize.y)) % int(oceanSize.y));
+    uint oceanIndex = oz * oceanSize.x + ox;
+
+    float sign = ((offset.x + offset.y) & 1) != 0 ? 1.0 : -1.0;
+
+    float height = sign * h[oceanIndex].r;
+    float deltaX = dispFactor * sign * dispX[oceanIndex].r;
+    float deltaZ = dispFactor * sign * dispZ[oceanIndex].r;
+
+    float x = float(offset.x) + deltaX;
+    float z = float(offset.y) + deltaZ;
+
+    uint meshIndex = gid.y * meshSize.x + gid.x;
+
+    mesh[meshIndex].x = x + (oceanSize.x * 0.5);
+    mesh[meshIndex].y = height;
+    mesh[meshIndex].z = z + (oceanSize.x * 0.5);
+}
