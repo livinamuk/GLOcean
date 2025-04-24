@@ -12,8 +12,8 @@
 #include "Tools/ImageTools.h"
 #include "HellTypes.h"
 
-void Init(int width, int height, std::string title) {
-    OpenGLBackend::Init(width, height, title);
+void Init(const std::string& title) {
+    OpenGLBackend::Init(title);
     AssetManager::Init();
     TextBlitter::Init();
     Audio::Init();
@@ -54,7 +54,7 @@ void Render() {
 }
 
 int main() {
-    Init(1920, 1080, "GL Depth Peeling");
+    Init("GL Depth Peeling");
     while (OpenGLBackend::WindowIsOpen()) {
         Update();
         Render();

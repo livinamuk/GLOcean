@@ -110,26 +110,39 @@ void OpenGLMeshPatch::recreate() {
     // Compute Normals based on positions
     computeNormals();
 
-    // Indices (using "Serpentine" or "S-shaped" strip for better cache coherency)
-    std::vector<unsigned int> indices(n * m + (n + 1) * (m - 2));
-    int index = 0;
-    for (int i = 0; i < m - 1; ++i)
-        for (int j = 0; j < n; ++j)
-        {
-            int isEvenRow = (i % 2 == 0);
-            int column = j * isEvenRow + (n - 1 - j) * (1 - isEvenRow);
-            int row = i * isEvenRow + (i + 1) * (1 - isEvenRow);
-            int next = isEvenRow * 2 - 1;
+    std::vector<unsigned int> indices;
+// reserve an upper bound (approx)
+    indices.reserve((n * (m - 1) * 2) + 2 * (m - 2));
 
-            indices[index++] = static_cast<unsigned int>(row * n + column);
-            indices[index++] = static_cast<unsigned int>((row + next) * n + column);
-
-            if (j == (n - 1) && i < (m - 2))
-            {
-                indices[index++] = static_cast<unsigned int>((row + isEvenRow) * n + column);
+    for (int i = 0; i < m - 1; ++i) {
+        bool even = (i % 2) == 0;
+        // build the vertical “ladder” for this row
+        if (even) {
+            for (int j = 0; j < n; ++j) {
+                indices.push_back(i * n + j);
+                indices.push_back((i + 1) * n + j);
             }
         }
-    m_indexCount = n * m + (n + 1) * (m - 2);
+        else {
+            for (int j = n - 1; j >= 0; --j) {
+                indices.push_back((i + 1) * n + j);
+                indices.push_back(i * n + j);
+            }
+        }
+
+        // insert two degenerates to restart without flipping
+        if (i < m - 2) {
+            // last vertex of this strip
+            unsigned int last = indices.back();
+            // first vertex of next strip
+            unsigned int nextFirst = even
+                ? ((i + 1) * n + (n - 1))   // even ended at bottom right
+                : ((i + 1) * n + 0);      // odd  ended at top   left
+            indices.push_back(last);
+            indices.push_back(nextFirst);
+        }
+    }
+    m_indexCount = 2 * n * (m - 1) + 2 * (m - 2);
 
     // Generate and Bind VAO
     glGenVertexArrays(1, &m_VAO);

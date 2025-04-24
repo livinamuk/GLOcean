@@ -6,7 +6,6 @@ vec3 GetDirectLighting(vec3 lightPos, vec3 lightColor, float radius, float stren
 	float lightRadiance = strength;
 	vec3 lightDir = normalize(lightPos - WorldPos);
 
-    
     lightDir = normalize(vec3(-0.5, 0.25, 1));
 
 	float lightAttenuation = smoothstep(radius, 0, length(lightPos - WorldPos));

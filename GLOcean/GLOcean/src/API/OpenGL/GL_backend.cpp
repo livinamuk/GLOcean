@@ -32,7 +32,7 @@ namespace OpenGLBackend {
         return g_window;
     }
 
-    void Init(int width, int height, std::string title) {
+    void Init(std::string title) {
         glfwInit();
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
@@ -46,9 +46,9 @@ namespace OpenGLBackend {
         glfwWindowHint(GLFW_REFRESH_RATE, g_mode->refreshRate);
         g_fullscreenWidth = g_mode->width;
         g_fullscreenHeight = g_mode->height;
-        g_windowedWidth = width;
-        g_windowedHeight = height;
-        g_window = glfwCreateWindow(width, height, title.c_str(), NULL, NULL);
+        g_windowedWidth = g_fullscreenWidth * 0.75f;
+        g_windowedHeight = g_fullscreenHeight * 0.75f;
+        g_window = glfwCreateWindow(g_windowedWidth, g_windowedHeight, title.c_str(), NULL, NULL);
         if (g_window == NULL) {
             std::cout << "GLFW window failed creation\n";
             glfwTerminate();

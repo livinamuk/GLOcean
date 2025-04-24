@@ -10,7 +10,7 @@
 enum class WindowedMode { WINDOWED, FULLSCREEN };
 
 namespace OpenGLBackend {
-    void Init(int width, int height, std::string title);
+    void Init(std::string title);
     void ToggleFullscreen();
     void SetWindowedMode(const WindowedMode& windowedMode);
     void ToggleFullscreen();

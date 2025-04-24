@@ -31,11 +31,11 @@ namespace OpenGLRenderer {
         Shader textBlitter;
         Shader hairfinalComposite;
         Shader hairLayerComposite;
-        Shader skyboxShader;
-        Shader oceanGeometryShader;
-        Shader oceanComputeSpectrumShader;
-        Shader oceanComputePositionsShader;
-        Shader oceanComputeNormalsShader;
+        Shader skybox;
+        Shader oceanColor;
+        Shader oceanCalculateSpectrum;
+        Shader oceanUpdateMesh;
+        Shader oceanUpdateNormals;
     } g_shaders;
 
     struct FrameBuffers {
@@ -425,11 +425,11 @@ namespace OpenGLRenderer {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, mDevGradXIn.GetHandle());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, mDevGradZIn.GetHandle());
 
-        g_shaders.oceanComputeSpectrumShader.Use();
-        g_shaders.oceanComputeSpectrumShader.SetUvec2("oceanSize", oceanSize);
-        g_shaders.oceanComputeSpectrumShader.SetVec2("oceanLength", oceanLength);
-        g_shaders.oceanComputeSpectrumShader.SetFloat("g", gravity);
-        g_shaders.oceanComputeSpectrumShader.SetFloat("t", globalTime);
+        g_shaders.oceanCalculateSpectrum.Use();
+        g_shaders.oceanCalculateSpectrum.SetUvec2("oceanSize", oceanSize);
+        g_shaders.oceanCalculateSpectrum.SetVec2("oceanLength", oceanLength);
+        g_shaders.oceanCalculateSpectrum.SetFloat("g", gravity);
+        g_shaders.oceanCalculateSpectrum.SetFloat("t", globalTime);
         glDispatchCompute(fftBlockSizeX, fftBlockSizeY, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -445,10 +445,10 @@ namespace OpenGLRenderer {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mDevDispXOut.GetHandle());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mDevDispZOut.GetHandle());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, g_oceanMeshPatch.GetVBO());
-        g_shaders.oceanComputePositionsShader.Use();
-        g_shaders.oceanComputePositionsShader.SetUvec2("oceanSize", oceanSize);
-        g_shaders.oceanComputePositionsShader.SetUvec2("meshSize", meshSize);
-        g_shaders.oceanComputePositionsShader.SetFloat("dispFactor", displacementFactor);
+        g_shaders.oceanUpdateMesh.Use();
+        g_shaders.oceanUpdateMesh.SetUvec2("u_oceanSize", oceanSize);
+        g_shaders.oceanUpdateMesh.SetUvec2("u_meshSize", meshSize);
+        g_shaders.oceanUpdateMesh.SetFloat("u_dispFactor", displacementFactor);
         glDispatchCompute(meshBlockSizeX, meshBlockSizeY, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -457,16 +457,16 @@ namespace OpenGLRenderer {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mDevGradXOut.GetHandle());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mDevGradZOut.GetHandle());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, g_oceanMeshPatch.GetVBO());
-        g_shaders.oceanComputeNormalsShader.Use();
-        g_shaders.oceanComputeNormalsShader.SetUvec2("oceanSize", oceanSize);
-        g_shaders.oceanComputeNormalsShader.SetUvec2("meshSize", meshSize);
+        g_shaders.oceanUpdateNormals.Use();
+        g_shaders.oceanUpdateNormals.SetUvec2("u_oceanSize", oceanSize);
+        g_shaders.oceanUpdateNormals.SetUvec2("u_meshSize", meshSize);
         glDispatchCompute(meshBlockSizeX, meshBlockSizeY, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
 
     void RenderOcean() {
 
-        glDisable(GL_CULL_FACE);
+        //glDisable(GL_CULL_FACE);
 
         g_frameBuffers.main.Bind();
         g_frameBuffers.main.SetViewport();
@@ -482,12 +482,12 @@ namespace OpenGLRenderer {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_CUBE_MAP, g_skybox.cubemap.ID);
 
-        g_shaders.oceanGeometryShader.Use();
-        g_shaders.oceanGeometryShader.SetInt("environmentMap", 0);
-        g_shaders.oceanGeometryShader.SetVec3("lightDir", rotatedLightDir);
-        g_shaders.oceanGeometryShader.SetVec3("eyePos", viewPos);
-        g_shaders.oceanGeometryShader.SetMat4("view", viewMatrix);
-        g_shaders.oceanGeometryShader.SetMat4("projection", projectionMatrix);
+        g_shaders.oceanColor.Use();
+        g_shaders.oceanColor.SetInt("environmentMap", 0);
+        g_shaders.oceanColor.SetVec3("lightDir", rotatedLightDir);
+        g_shaders.oceanColor.SetVec3("eyePos", viewPos);
+        g_shaders.oceanColor.SetMat4("view", viewMatrix);
+        g_shaders.oceanColor.SetMat4("projection", projectionMatrix);
 
         float scale = 0.025f;
         Transform t;
@@ -500,11 +500,11 @@ namespace OpenGLRenderer {
 
         glBindVertexArray(g_oceanMeshPatch.GetVAO());
 
-        for (int x = 0; x < count; x++) {
+        for (int x = -20; x < count; x++) {
             for (int z = 0; z < count; z++) {
 
                 t.position = glm::vec3(offset * x, -0.65f, offset * z);
-                g_shaders.oceanGeometryShader.SetMat4("model", t.to_mat4());
+                g_shaders.oceanColor.SetMat4("model", t.to_mat4());
                 glDrawElements(GL_TRIANGLE_STRIP, g_oceanMeshPatch.GetIndexCount(), GL_UNSIGNED_INT, nullptr);
             }
         }
@@ -524,10 +524,10 @@ namespace OpenGLRenderer {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_CUBE_MAP, g_skybox.cubemap.ID);
 
-        g_shaders.skyboxShader.Use();
-        g_shaders.skyboxShader.SetInt("environmentMap", 0);
-        g_shaders.skyboxShader.SetMat4("view", viewMatrix);
-        g_shaders.skyboxShader.SetMat4("projection", projectionMatrix);
+        g_shaders.skybox.Use();
+        g_shaders.skybox.SetInt("environmentMap", 0);
+        g_shaders.skybox.SetMat4("view", viewMatrix);
+        g_shaders.skybox.SetMat4("projection", projectionMatrix);
 
         glDepthFunc(GL_LEQUAL);
         glBindVertexArray(g_skybox.vao);
@@ -541,11 +541,11 @@ namespace OpenGLRenderer {
             g_shaders.hairLayerComposite.Load({ "gl_hair_layer_composite.comp" }) &&
             g_shaders.solidColor.Load({ "gl_solid_color.vert", "gl_solid_color.frag" }) &&
 
-            g_shaders.skyboxShader.Load({ "skybox_env_map_default.vert", "skybox_env_map_default.frag" }) &&
-            g_shaders.oceanGeometryShader.Load({ "ocean.vert", "ocean.frag" }) &&
-            g_shaders.oceanComputeSpectrumShader.Load({ "ocean_calculate_spectrum.comp" }) &&
-            g_shaders.oceanComputePositionsShader.Load({ "ocean_update_mesh.comp" }) &&
-            g_shaders.oceanComputeNormalsShader.Load({ "ocean_update_normals.comp" }) &&
+            g_shaders.skybox.Load({ "GL_skybox.vert", "GL_skybox.frag" }) &&
+            g_shaders.oceanColor.Load({ "GL_ocean_color.vert", "GL_ocean_color.frag" }) &&
+            g_shaders.oceanCalculateSpectrum.Load({ "GL_ocean_calculate_spectrum.comp" }) &&
+            g_shaders.oceanUpdateMesh.Load({ "GL_ocean_update_mesh.comp" }) &&
+            g_shaders.oceanUpdateNormals.Load({ "GL_ocean_update_normals.comp" }) &&
             
             g_shaders.hairDepthPeel.Load({ "gl_hair_depth_peel.vert", "gl_hair_depth_peel.frag" }) &&
             g_shaders.lighting.Load({ "gl_lighting.vert", "gl_lighting.frag" }) &&

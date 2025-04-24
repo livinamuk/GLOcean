@@ -160,12 +160,14 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>vendor\glad\include;vendor\GLFW\include;vendor\glm;vendor\stb_image;vendor\fmod\include;vendor\compressonator\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>vendor\GLFW\lib\Release;vendor\fmod\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>glfw3.lib;fmod_vc.lib;assimp-vc143-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>glfw3.lib;fmod_vc.lib;assimp-vc143-mt.lib;ucrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>copy /Y "$(ProjectDir)vendor\DLLs\fmod.dll" "$(TargetDir)fmod.dll"
@@ -183,6 +185,7 @@ xcopy "$(ProjectDir)res\shaders" "$(TargetDir)res\shaders" /e /y /i /r</Command>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>vendor\compressonator\include\;vendor\gli\include;src\Common;vendor\glad\include;vendor\GLFW\include;vendor\glm;vendor\stb_image;vendor\assimp\include;vendor;vendor\fmod\include;vendor\tinyexr;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

@@ -52,30 +52,7 @@ void main() {
 
     float finalAlpha = baseColor.a;
     
-
     vec3 finalColor = directLighting.rgb + ambientLighting;
-
-    // Hair transluceny    
-    //if (isHair) {    
-	//    vec3 viewDir = normalize(viewPos - WorldPos);
-    //    vec3 lightDir = normalize(lightPosition - WorldPos.xyz);
-    //    vec3 halfVector = normalize(lightDir + viewDir);
-    //    float diff = max(dot(normal, lightDir), 0.0);
-    //    float spec = pow(max(dot(normal, halfVector), 0.0), 32.0);
-    //    float backlight = max(dot(-normal, lightDir), 0.0);
-    //    vec3 lightColor = vec3(1, 0.98, 0.94);
-    //    float translucencyFactor = 0.01;
-    //    vec3 translucency = backlight * lightColor * translucencyFactor;
-    //    finalColor.rgb += translucency * baseColor.rgb; // multiplying with baseColor is a hack but looks 100x better
-    //}
-
-    // Hair frensel
-    //if (isHair) {    
-	//    vec3 viewDir = normalize(viewPos - WorldPos);
-    //    float frenselFactor = 0.025;
-    //    float fresnel = pow(1.0 - dot(normal, viewDir), 2.0);        
-    //    finalColor.rgb += vec3(fresnel * frenselFactor) * baseColor.rgb; // multiplying with baseColor is a hack but looks 100x better
-    //}
 
     // Tone mapping
 	finalColor = mix(finalColor, Tonemap_ACES(finalColor), 1.0);
