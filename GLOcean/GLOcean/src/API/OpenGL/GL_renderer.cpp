@@ -47,21 +47,21 @@ namespace OpenGLRenderer {
     Skybox g_skybox;
     OpenGLMeshPatch g_oceanMeshPatch;
 
-    OpenGLSSBO mDevH0;
-    OpenGLSSBO mDevGpuSpectrumIn;
-    OpenGLSSBO mDevDispXIn;
-    OpenGLSSBO mDevDispZIn;
-    OpenGLSSBO mDevGradXIn;
-    OpenGLSSBO mDevGradZIn;
-    OpenGLSSBO mDevGpuSpectrumOut;
-    OpenGLSSBO mDevDispXOut;
-    OpenGLSSBO mDevDispZOut;
-    OpenGLSSBO mDevGradXOut;
-    OpenGLSSBO mDevGradZOut;
+    OpenGLSSBO g_fftH0SSBO;
+    OpenGLSSBO g_fftSpectrumInSSBO;
+    OpenGLSSBO g_fftSpectrumOutSSBO;
+    OpenGLSSBO g_fftDispInXSSBO;
+    OpenGLSSBO g_fftDispZInSSBO;
+    OpenGLSSBO g_fftGradXInSSBO;
+    OpenGLSSBO g_fftGradZInSSBO;
+    OpenGLSSBO g_fftDispXOutSSBO;
+    OpenGLSSBO g_fftDispZOutSSBO;
+    OpenGLSSBO g_fftGradXOutSSBO;
+    OpenGLSSBO g_fftGradZOutSSBO;
 
     void InitOceanGPUState();
     void DrawScene(Shader& shader);
-    void ComputeOcean();
+    void ComputeOceanFFT();
     void RenderOcean();
     void RenderLighting();
     void RenderDebug();
@@ -91,13 +91,15 @@ namespace OpenGLRenderer {
 
     void RenderFrame() {
 
+        glfwSwapInterval(1);
+
         g_frameBuffers.main.Bind();
         g_frameBuffers.main.SetViewport();
         g_frameBuffers.main.DrawBuffers({ "Color" });
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        ComputeOcean();
+        ComputeOceanFFT();
 
         RenderLighting();
         RenderHair();
@@ -376,31 +378,31 @@ namespace OpenGLRenderer {
 
     void InitOceanGPUState() {
 
-        g_oceanMeshPatch.resize(Ocean::GetMeshSize().x, Ocean::GetMeshSize().y);
+        g_oceanMeshPatch.Resize(Ocean::GetMeshSize().x, Ocean::GetMeshSize().y);
 
         GLbitfield staticFlags = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
         GLbitfield dynamicFlags = GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
 
         const glm::uvec2 oceanSize = Ocean::GetOceanSize();
 
-        mDevH0.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), staticFlags);
-        mDevGpuSpectrumIn.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
-        mDevGpuSpectrumOut.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
-        mDevDispXIn.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
-        mDevDispZIn.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
-        mDevGradXIn.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
-        mDevGradZIn.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
-        mDevDispXOut.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
-        mDevDispZOut.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
-        mDevGradXOut.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
-        mDevGradZOut.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
+        g_fftH0SSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), staticFlags);
+        g_fftSpectrumInSSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
+        g_fftSpectrumOutSSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
+        g_fftDispInXSSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
+        g_fftDispZInSSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
+        g_fftGradXInSSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
+        g_fftGradZInSSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
+        g_fftDispXOutSSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
+        g_fftDispZOutSSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
+        g_fftGradXOutSSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
+        g_fftGradZOutSSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
 
         // Precompute HO
         std::vector<std::complex<float>> h0 = Ocean::ComputeH0();
-        mDevH0.copyFrom(h0.data(), sizeof(std::complex<float>) * h0.size());
+        g_fftH0SSBO.copyFrom(h0.data(), sizeof(std::complex<float>) * h0.size());
     }
 
-    void ComputeOcean() {
+    void ComputeOceanFFT() {
 
         static float globalTime = 0.0f;
         globalTime += 1.0f / 60.0f;
@@ -418,12 +420,12 @@ namespace OpenGLRenderer {
         const GLuint meshBlockSizeY = (meshSize.y + 16 - 1) / blocksPerSide;
 
         // Generate spectrum on GPU
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mDevH0.GetHandle());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mDevGpuSpectrumIn.GetHandle());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mDevDispXIn.GetHandle());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, mDevDispZIn.GetHandle());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, mDevGradXIn.GetHandle());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, mDevGradZIn.GetHandle());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_fftH0SSBO.GetHandle());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g_fftSpectrumInSSBO.GetHandle());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, g_fftDispInXSSBO.GetHandle());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, g_fftDispZInSSBO.GetHandle());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, g_fftGradXInSSBO.GetHandle());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, g_fftGradZInSSBO.GetHandle());
 
         g_shaders.oceanCalculateSpectrum.Use();
         g_shaders.oceanCalculateSpectrum.SetUvec2("oceanSize", oceanSize);
@@ -434,82 +436,73 @@ namespace OpenGLRenderer {
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
         // Perform FFT
-        Ocean::ComputeInverseFFT2D(mDevGpuSpectrumIn.GetHandle(), mDevGpuSpectrumOut.GetHandle());
-        Ocean::ComputeInverseFFT2D(mDevDispXIn.GetHandle(), mDevDispXOut.GetHandle());
-        Ocean::ComputeInverseFFT2D(mDevDispZIn.GetHandle(), mDevDispZOut.GetHandle());
-        Ocean::ComputeInverseFFT2D(mDevGradXIn.GetHandle(), mDevGradXOut.GetHandle());
-        Ocean::ComputeInverseFFT2D(mDevGradZIn.GetHandle(), mDevGradZOut.GetHandle());
+        Ocean::ComputeInverseFFT2D(g_fftSpectrumInSSBO.GetHandle(), g_fftSpectrumOutSSBO.GetHandle());
+        Ocean::ComputeInverseFFT2D(g_fftDispInXSSBO.GetHandle(), g_fftDispXOutSSBO.GetHandle());
+        Ocean::ComputeInverseFFT2D(g_fftDispZInSSBO.GetHandle(), g_fftDispZOutSSBO.GetHandle());
+        Ocean::ComputeInverseFFT2D(g_fftGradXInSSBO.GetHandle(), g_fftGradXOutSSBO.GetHandle());
+        Ocean::ComputeInverseFFT2D(g_fftGradZInSSBO.GetHandle(), g_fftGradZOutSSBO.GetHandle());
 
         // Update mesh position
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mDevGpuSpectrumOut.GetHandle());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mDevDispXOut.GetHandle());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mDevDispZOut.GetHandle());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_fftSpectrumOutSSBO.GetHandle());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g_fftDispXOutSSBO.GetHandle());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, g_fftDispZOutSSBO.GetHandle());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, g_oceanMeshPatch.GetVBO());
         g_shaders.oceanUpdateMesh.Use();
         g_shaders.oceanUpdateMesh.SetUvec2("u_oceanSize", oceanSize);
         g_shaders.oceanUpdateMesh.SetUvec2("u_meshSize", meshSize);
         g_shaders.oceanUpdateMesh.SetFloat("u_dispFactor", displacementFactor);
-        glDispatchCompute(meshBlockSizeX, meshBlockSizeY, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        glDispatchCompute(meshBlockSizeX, meshBlockSizeY, 1);
 
         // Update normals
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mDevGpuSpectrumOut.GetHandle());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mDevGradXOut.GetHandle());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mDevGradZOut.GetHandle());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_fftSpectrumOutSSBO.GetHandle());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g_fftGradXOutSSBO.GetHandle());
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, g_fftGradZOutSSBO.GetHandle());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, g_oceanMeshPatch.GetVBO());
         g_shaders.oceanUpdateNormals.Use();
         g_shaders.oceanUpdateNormals.SetUvec2("u_oceanSize", oceanSize);
         g_shaders.oceanUpdateNormals.SetUvec2("u_meshSize", meshSize);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
         glDispatchCompute(meshBlockSizeX, meshBlockSizeY, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
     }
 
     void RenderOcean() {
+        glm::mat4 projectionMatrix = Camera::GetProjectionMatrix();
+        glm::mat4 viewMatrix = Camera::GetViewMatrix();
+        glm::vec3 viewPos = Camera::GetViewPos();
 
-        //glDisable(GL_CULL_FACE);
+        int patchCount = 10;
+        float scale = 0.0325f;
+        float patchOffset = Ocean::GetOceanSize().y * scale;
+
+        Transform patchTransform;
+        patchTransform.scale = glm::vec3(scale);
 
         g_frameBuffers.main.Bind();
         g_frameBuffers.main.SetViewport();
         g_frameBuffers.main.DrawBuffers({ "Color" });
 
-        const glm::vec3 baseLightDir(0.0f, 1.0f, 0.0f);
-        glm::vec3 rotatedLightDir = glm::rotateX(baseLightDir, glm::radians(75.0f));
-        
-        glm::mat4 projectionMatrix = Camera::GetProjectionMatrix();
-        glm::mat4 viewMatrix = Camera::GetViewMatrix();
-        glm::vec3 viewPos = Camera::GetViewPos();
-
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, g_skybox.cubemap.ID);
-
         g_shaders.oceanColor.Use();
         g_shaders.oceanColor.SetInt("environmentMap", 0);
-        g_shaders.oceanColor.SetVec3("lightDir", rotatedLightDir);
         g_shaders.oceanColor.SetVec3("eyePos", viewPos);
         g_shaders.oceanColor.SetMat4("view", viewMatrix);
         g_shaders.oceanColor.SetMat4("projection", projectionMatrix);
 
-        float scale = 0.025f;
-        Transform t;
-        t.scale = glm::vec3(scale);
-
-        float offset = Ocean::GetOceanSize().y * scale;
-
-        int count = 10;
-        
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, g_skybox.cubemap.ID);
 
         glBindVertexArray(g_oceanMeshPatch.GetVAO());
 
-        for (int x = -20; x < count; x++) {
-            for (int z = 0; z < count; z++) {
+        glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 
-                t.position = glm::vec3(offset * x, -0.65f, offset * z);
-                g_shaders.oceanColor.SetMat4("model", t.to_mat4());
+        for (int x = -20; x < patchCount; x++) {
+            for (int z = -10; z < patchCount; z++) {
+                patchTransform.position = glm::vec3(patchOffset * x, -0.65f, patchOffset * z);
+                g_shaders.oceanColor.SetMat4("model", patchTransform.to_mat4());
                 glDrawElements(GL_TRIANGLE_STRIP, g_oceanMeshPatch.GetIndexCount(), GL_UNSIGNED_INT, nullptr);
             }
         }
-
-        DrawPoint(glm::vec3(0.0f), RED);
     }
 
     void RenderSkyBox() {

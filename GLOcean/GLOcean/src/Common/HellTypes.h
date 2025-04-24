@@ -21,8 +21,8 @@ struct FontVertex {
 };
 
 struct VertexPN {
-    glm::vec3 mPos;
-    glm::vec3 mNormal;
+    glm::vec3 position;
+    glm::vec3 normal;
 };
 
 struct Vertex {

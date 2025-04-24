@@ -9,13 +9,14 @@ in vec3 normal;
 
 out vec4 fragOut;
 
+
 void main () {
     vec3 lightDir = normalize(vec3(-0.5, 0.25, 1));
     
     vec3 eyeVector = normalize(position - eyePos);
     vec3 n = normalize(normal);
     vec3 l = normalize(lightDir);
-    
+        
     float snellRatio = 3.0 / 4.0;
     
     // Compute Fresnel term according to the formula given by Tessendorf
@@ -53,7 +54,7 @@ void main () {
     
     //vec3 lightDir = normalize(vec3(1.0, 0.5, -1.0));
     float transparencyFactor = 0.925;
-    transparencyFactor = 0.2;
+    transparencyFactor = 0.1;
     float specularFactor = clamp(dot(reflected, lightDir), 0.0, 1.0);
     specularFactor = pow(specularFactor, 100.0) * 100.0;
     
@@ -62,6 +63,7 @@ void main () {
     vec3 seaBottomColour = vec3(texture(environmentMap, refracted));
     vec3 skyColour = vec3(texture(environmentMap, reflected));
       
+    // Match the color tweaks used to render the skybox
     skyColour.rgb = AdjustSaturation(skyColour.rgb, -0.5);
     skyColour.rgb = AdjustLightness(skyColour.rgb, -0.75);
     

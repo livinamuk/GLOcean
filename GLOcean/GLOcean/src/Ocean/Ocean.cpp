@@ -12,17 +12,17 @@
 
 namespace Ocean {
 
-    const float g_lengthScaleFactor = 0.85f;
+    const float g_spectrumScaleFactor = 0.75f;
     glm::uvec2 g_oceanSize = glm::uvec2(128, 128);
     glm::uvec2 g_meshSize = g_oceanSize + glm::uvec2(1, 1);
-    glm::vec2 g_oceanLength = glm::vec2(g_oceanSize.x * g_lengthScaleFactor, g_oceanSize.y * g_lengthScaleFactor);
+    glm::vec2 g_oceanLength = glm::vec2(g_oceanSize.x * g_spectrumScaleFactor, g_oceanSize.y * g_spectrumScaleFactor);
     glm::vec2 g_mWindDir = glm::vec2(1.0f, 0.0f);
-    float g_windSpeed = 100.0f;
+    float g_windSpeed = 75.0f;
     float g_gravity = 9.8f;
-    float g_amplitude = 2.0e-5f;
+    float g_amplitude = 0.00003f;
     float g_crossWindDampingCoefficient = 1.0f;         // Controls the presence of waves perpendicular to the wind direction
     float g_smallWavesDampingCoefficient = 0.0000001f;  // controls the presence of waves of small wave longitude
-    float g_displacementFactor = -1.3f;                 // Controls the 'chopiness' of the ocean waves
+    float g_displacementFactor = -1.0f;                 // Controls the choppiness of the ocean waves
     FFTSolver g_FFTSolver;
 
     void ComputeInverseFFT2D(unsigned int inputHandle, unsigned int outputHandle) {

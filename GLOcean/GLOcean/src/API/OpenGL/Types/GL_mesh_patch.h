@@ -8,23 +8,17 @@
 
 struct OpenGLMeshPatch {
     OpenGLMeshPatch() = default;
-    OpenGLMeshPatch(size_t size);
-    OpenGLMeshPatch(size_t width, size_t height);
+    void Resize(int width, int height);
 
-    void resize(int width, int height);
-    const VertexPN* data() const;
-    void computeNormals();
-    void refreshGPU();
-
-    const size_t GetWidth() const         { return m_width; }
-    const size_t GetHeight() const        { return m_height; }
+    const size_t GetWidth() const           { return m_width; }
+    const size_t GetHeight() const          { return m_height; }
     const GLuint GetVAO() const             { return m_VAO; }
     const GLuint GetVBO() const             { return m_VBO; }
     const GLuint GetEBO() const             { return m_EBO; }
     const GLsizei GetIndexCount() const     { return m_indexCount; }
 
 private:
-    void recreate();
+    void CreateBuffers();
     void CleanUp();
 
     std::vector<VertexPN> m_vertices;
