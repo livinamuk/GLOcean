@@ -36,11 +36,13 @@ namespace OpenGLRenderer {
         Shader oceanCalculateSpectrum;
         Shader oceanUpdateMesh;
         Shader oceanUpdateNormals;
+        Shader underwaterTest;
     } g_shaders;
 
     struct FrameBuffers {
         GLFrameBuffer main;
         GLFrameBuffer hair;
+        GLFrameBuffer fft;
     } g_frameBuffers;
 
 
@@ -69,10 +71,12 @@ namespace OpenGLRenderer {
     void RenderHairLayer(std::vector<RenderItem>& renderItems, int peelCount);
     void RenderText();
     void RenderSkyBox();
+    void UnderwaterTest();
 
     void Init() {
         g_frameBuffers.main.Create("Main", 1920, 1080);
         g_frameBuffers.main.CreateAttachment("Color", GL_RGBA8);
+        g_frameBuffers.main.CreateAttachment("WorldPosition", GL_RGBA32F);
         g_frameBuffers.main.CreateDepthAttachment(GL_DEPTH32F_STENCIL8);
 
         float hairDownscaleRatio = 1.0f;
@@ -82,6 +86,10 @@ namespace OpenGLRenderer {
         g_frameBuffers.hair.CreateAttachment("ViewspaceDepth", GL_R32F);
         g_frameBuffers.hair.CreateAttachment("ViewspaceDepthPrevious", GL_R32F);
         g_frameBuffers.hair.CreateAttachment("Composite", GL_RGBA8);
+
+        g_frameBuffers.fft.Create("FFT", Ocean::GetOceanSize().x, Ocean::GetOceanSize().y);
+        g_frameBuffers.fft.CreateAttachment("Height", GL_R32F);
+
         LoadShaders();
 
         InitOceanGPUState();
@@ -93,9 +101,15 @@ namespace OpenGLRenderer {
 
         glfwSwapInterval(1);
 
+        g_frameBuffers.fft.Bind();
+        g_frameBuffers.fft.SetViewport();
+        g_frameBuffers.fft.DrawBuffers({ "Height" });
+        glClearColor(1.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
         g_frameBuffers.main.Bind();
         g_frameBuffers.main.SetViewport();
-        g_frameBuffers.main.DrawBuffers({ "Color" });
+        g_frameBuffers.main.DrawBuffers({ "Color", "WorldPosition" });
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -105,6 +119,7 @@ namespace OpenGLRenderer {
         RenderHair();
         RenderOcean();
         RenderSkyBox();
+        UnderwaterTest();
         RenderDebug();
 
         int width, height;
@@ -124,6 +139,9 @@ namespace OpenGLRenderer {
         RenderText();
 
         g_frameBuffers.main.BlitToDefaultFrameBuffer("Color", 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        //g_frameBuffers.main.BlitToDefaultFrameBuffer("WorldPosition", 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+        //g_frameBuffers.fft.BlitToDefaultFrameBuffer("Height", 0, 0, height, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 
         glfwSwapBuffers(OpenGLBackend::GetWindowPtr());
         glfwPollEvents();
@@ -197,7 +215,7 @@ namespace OpenGLRenderer {
 
         g_frameBuffers.main.Bind();
         g_frameBuffers.main.SetViewport();
-        g_frameBuffers.main.DrawBuffers({ "Color" });
+        g_frameBuffers.main.DrawBuffers({ "Color", "WorldPosition" });
 
         glEnable(GL_CULL_FACE);
         glEnable(GL_DEPTH_TEST);
@@ -443,6 +461,7 @@ namespace OpenGLRenderer {
         Ocean::ComputeInverseFFT2D(g_fftGradZInSSBO.GetHandle(), g_fftGradZOutSSBO.GetHandle());
 
         // Update mesh position
+        glBindImageTexture(0, g_frameBuffers.fft.GetColorAttachmentHandleByName("Height"), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_fftSpectrumOutSSBO.GetHandle());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g_fftDispXOutSSBO.GetHandle());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, g_fftDispZOutSSBO.GetHandle());
@@ -528,6 +547,19 @@ namespace OpenGLRenderer {
         glDepthFunc(GL_LESS);
     }
 
+    void UnderwaterTest() {
+        g_shaders.underwaterTest.Use();
+
+        glBindImageTexture(0, g_frameBuffers.main.GetColorAttachmentHandleByName("Color"), 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.main.GetColorAttachmentHandleByName("WorldPosition"));
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft.GetColorAttachmentHandleByName("Height"));
+
+        glDispatchCompute((g_frameBuffers.main.GetWidth() + 7) / 8, (g_frameBuffers.main.GetHeight() + 7) / 8, 1);
+    }
+
     void LoadShaders() {
 
         if (g_shaders.hairfinalComposite.Load({ "gl_hair_final_composite.comp" }) &&
@@ -539,6 +571,10 @@ namespace OpenGLRenderer {
             g_shaders.oceanCalculateSpectrum.Load({ "GL_ocean_calculate_spectrum.comp" }) &&
             g_shaders.oceanUpdateMesh.Load({ "GL_ocean_update_mesh.comp" }) &&
             g_shaders.oceanUpdateNormals.Load({ "GL_ocean_update_normals.comp" }) &&
+
+            g_shaders.underwaterTest.Load({ "GL_underwater_test.comp" }) &&
+
+            
             
             g_shaders.hairDepthPeel.Load({ "gl_hair_depth_peel.vert", "gl_hair_depth_peel.frag" }) &&
             g_shaders.lighting.Load({ "gl_lighting.vert", "gl_lighting.frag" }) &&

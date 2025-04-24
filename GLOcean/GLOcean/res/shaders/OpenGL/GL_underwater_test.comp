@@ -1,0 +1,52 @@
+#version 430 core
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(rgba8, binding = 0) uniform image2D outputImage;
+
+layout(binding = 0) uniform sampler2D WorldPositionTexture;
+layout(binding = 1) uniform sampler2D FFTHeightTexture;
+
+void main() {
+	ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);   
+    ivec2 outputImageSize = imageSize(outputImage);
+    vec2 uv_screenspace = vec2(pixelCoords) / vec2(outputImageSize);
+
+    // Don't process out of bounds pixels
+    if (pixelCoords.x >= outputImageSize.x || pixelCoords.y >= outputImageSize.y) {
+        return;
+    }    
+    
+    vec4 lighting = imageLoad(outputImage, pixelCoords);
+    float fftHeight = texture(FFTHeightTexture, uv_screenspace).r;
+    vec3 worldPosition = texture(WorldPositionTexture, uv_screenspace).rgb;
+
+    // Skip skybox
+    if (worldPosition == vec3(0,0,0)) {
+        return;
+    }
+
+    const float scale = 0.0325;
+    const float waterOriginHeight = -0.65;
+    const vec2 oceanGridSize = vec2(128.0);
+    const vec2 patchWorldSize = oceanGridSize * scale;
+    vec2 ocean_uv = fract(worldPosition.xz / patchWorldSize);
+    float displacement_from_texture = texture(FFTHeightTexture, ocean_uv).r;
+    float waterHeight = (displacement_from_texture * scale) + waterOriginHeight;
+    bool isUnderwater = worldPosition.y < waterHeight;
+
+    vec3 seaColor = vec3(0.286, 0.612, 0.576) * 0.05;
+
+    if (isUnderwater) {
+        vec3 finalColor = mix(lighting.rgb * seaColor, lighting.rgb, 0.75);
+        //finalColor = vec3(1 ,0, 0);
+        //finalColor = lighting.rgb * seaColor;
+        imageStore(outputImage, pixelCoords, vec4(finalColor, 1));
+    }
+    
+    // Foam line
+    float d = abs(worldPosition.y - waterHeight);
+    float edge = smoothstep(0.01, 0.0, d);
+    seaColor = vec3(1, 0, 0);
+    lighting.rgb = mix(lighting.rgb, seaColor, edge);
+    //imageStore(outputImage, pixelCoords, vec4(lighting.rgb, 1));
+}

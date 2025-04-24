@@ -50,6 +50,7 @@
     <None Include="res\shaders\OpenGL\gl_text_blitter.frag" />
     <None Include="res\shaders\OpenGL\gl_text_blitter.vert" />
     <None Include="res\shaders\common\pbr_functions.glsl" />
+    <None Include="res\shaders\OpenGL\GL_underwater_test.comp" />
     <None Include="res\shaders\terrain.frag" />
     <None Include="res\shaders\terrain.vert" />
     <None Include="res\shaders\skybox.frag" />

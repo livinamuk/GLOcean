@@ -2,7 +2,9 @@
 #include "../common/lighting.glsl"
 #include "../common/post_processing.glsl"
 
-layout (location = 0) out vec4 FragOut;
+layout (location = 0) out vec4 LightingOut;
+layout (location = 1) out vec4 WorldPositionOut;
+
 layout (binding = 0) uniform sampler2D baseColorTexture;
 layout (binding = 1) uniform sampler2D normalTexture;
 layout (binding = 2) uniform sampler2D rmaTexture;
@@ -60,5 +62,6 @@ void main() {
 	finalColor = mix(finalColor, Tonemap_ACES(finalColor), 0.235);
 
     finalColor.rgb = finalColor.rgb * finalAlpha;
-    FragOut = vec4(finalColor, finalAlpha);
+    LightingOut = vec4(finalColor, finalAlpha);
+    WorldPositionOut = vec4(WorldPos.xyz, 1);
 }
