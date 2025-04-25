@@ -1,4 +1,4 @@
-﻿#version 430
+#version 430
 layout(local_size_x = 16, local_size_y = 16) in;
 
 struct Complex { 
@@ -27,112 +27,26 @@ int Wrap(int v, int m) {
     return r < 0 ? r + m : r;
 }
 
-ivec2 Wrap2(ivec2 v){
-    return ivec2(Wrap(v.x, int(u_meshSize.x)),
-                 Wrap(v.y, int(u_meshSize.y)));
-}
-uint FlatIndex(ivec2 v){
-    return uint(v.y)*u_meshSize.x + uint(v.x);
-}
-
 void main() {
     uvec2 gid = gl_GlobalInvocationID.xy;
     if (gid.x >= u_meshSize.x || gid.y >= u_meshSize.y) return;
 
     uint meshIdx = gid.y * u_meshSize.x + gid.x;
 
-    // Center the grid around (0,0)
     ivec2 center = ivec2(u_meshSize) / 2;
     ivec2 off = ivec2(gid) - center;
 
-    // Wrap into [0..oceanSize)
     int ox = Wrap(off.x, int(u_oceanSize.x));
     int oz = Wrap(off.y, int(u_oceanSize.y));
     uint oceanIdx = uint(oz) * u_oceanSize.x + uint(ox);
 
-    // Sample precomputed gradients
     float gx = gradX[oceanIdx].r;
     float gz = gradZ[oceanIdx].r;
 
-    // Assemble and normalize
     float sign = ((off.x + off.y) & 1) != 0 ? -1.0 : 1.0;
     vec3 n = normalize(vec3(sign * gx, 1.0, sign * gz));
 
     mesh[meshIdx].nx = n.x;
     mesh[meshIdx].ny = n.y;
     mesh[meshIdx].nz = n.z;
-}
-
-// Normals from vertices
-void main2() {
-    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
-    if (gid.x >= int(u_meshSize.x) || gid.y >= int(u_meshSize.y)) return;
-
-    // neighbour coords, clamped at patch edges (WRONG)
-    ivec2 left  = ivec2(max(gid.x-1, 0),               gid.y);
-    ivec2 right = ivec2(min(gid.x+1, int(u_meshSize.x)-1), gid.y);
-    ivec2 down  = ivec2(gid.x,               max(gid.y-1, 0));
-    ivec2 up    = ivec2(gid.x,               min(gid.y+1, int(u_meshSize.y)-1));
-
-    
-    //ivec2 left  = ivec2(gid.x-1, gid.y);
-    //ivec2 right = ivec2(gid.x+1, gid.y);
-    //ivec2 down  = ivec2(gid.x, gid.y-1);
-    //ivec2 up    = ivec2(gid.x, gid.y+1);
-    //
-    //left = ivec2((left.x + u_meshSize.x) % u_meshSize.x, (left.y + u_meshSize.y) % u_meshSize.y);
-    //
-    //  // wrap neighbors in mesh-space
-    //ivec2 L = left;
-    //ivec2 R = right;
-    //ivec2 D = down;
-    //ivec2 U = up;
-    //
-    //if (L.x < 0 || R.x < 0 || D.x < 0 || U.x < 0 ||
-    //    L.y < 0 || R.y < 0 || D.y < 0 || U.y < 0) {
-    //    uint idx = FlatIndex(gid);
-    //    mesh[idx].nx = 1;
-    //    mesh[idx].ny = 0;
-    //    mesh[idx].nz = 0;
-    //    return;
-    //}
-    //
-    //if (L.x >= u_meshSize.x || R.x >= u_meshSize.x || D.x >= u_meshSize.x || U.x >= u_meshSize.x ||
-    //    L.y >= u_meshSize.y || R.y >= u_meshSize.y || D.y >= u_meshSize.y || U.y >= u_meshSize.y) {
-    //    uint idx = FlatIndex(gid);
-    //    mesh[idx].nx = 0;
-    //    mesh[idx].ny = 0;
-    //    mesh[idx].nz = 1;
-    //    return;
-    //}
-    
-
-    // fetch positions
-    vec3 pC = vec3(mesh[FlatIndex(gid)].x,
-                   mesh[FlatIndex(gid)].y,
-                   mesh[FlatIndex(gid)].z);
-    vec3 pL = vec3(mesh[FlatIndex(left)].x,
-                   mesh[FlatIndex(left)].y,
-                   mesh[FlatIndex(left)].z);
-    vec3 pR = vec3(mesh[FlatIndex(right)].x,
-                   mesh[FlatIndex(right)].y,
-                   mesh[FlatIndex(right)].z);
-    vec3 pD = vec3(mesh[FlatIndex(down)].x,
-                   mesh[FlatIndex(down)].y,
-                   mesh[FlatIndex(down)].z);
-    vec3 pU = vec3(mesh[FlatIndex(up)].x,
-                   mesh[FlatIndex(up)].y,
-                   mesh[FlatIndex(up)].z);
-
-    // central differences
-    vec3 dX = pR - pL;
-    vec3 dZ = pU - pD;
-    vec3 n  = normalize(cross(dZ, dX));
-
-
-    // write back
-    uint idx = FlatIndex(gid);
-    mesh[idx].nx = n.x;
-    mesh[idx].ny = n.y;
-    mesh[idx].nz = n.z;
 }
