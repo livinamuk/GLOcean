@@ -92,6 +92,7 @@ namespace Scene {
         CreateGameObject();
         GameObject* mermaid = &g_gameObjects[g_gameObjects.size() - 1];
         mermaid->SetPosition(glm::vec3(18.0, -1.0f, 10.0f));
+        mermaid->SetPosition(glm::vec3(0.0, -1.0f, 0.0f));
         mermaid->SetRotationY(3.14f * 1.7f);
         mermaid->SetModel("Mermaid");
         mermaid->SetMeshMaterialByMeshName("Rock", "Rock");

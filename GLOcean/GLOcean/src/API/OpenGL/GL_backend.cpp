@@ -59,6 +59,14 @@ namespace OpenGLBackend {
             std::cout << "GLAD failed init\n";
             return;
         }
+        GLint major, minor;
+        glGetIntegerv(GL_MAJOR_VERSION, &major);
+        glGetIntegerv(GL_MINOR_VERSION, &minor);
+        const GLubyte* vendor = glGetString(GL_VENDOR);
+        const GLubyte* renderer = glGetString(GL_RENDERER);
+        std::cout << "\nGPU: " << renderer << "\n";
+        std::cout << "GL version: " << major << "." << minor << "\n\n";
+
         glfwSetInputMode(g_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
         ToggleFullscreen();
         ToggleFullscreen();
@@ -282,5 +290,12 @@ namespace OpenGLBackend {
         pbo->SyncStart();
         pbo->SetCustomValue(jobID);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    }
+
+    void CleanUpBakingPBOs() {
+        for (PBO& pbo : g_textureBakingPBOs) {
+            pbo.CleanUp();
+        }
+        g_textureBakingPBOs.clear();
     }
 }

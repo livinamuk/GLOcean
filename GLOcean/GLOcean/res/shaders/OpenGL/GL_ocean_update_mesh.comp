@@ -1,4 +1,4 @@
-#version 430
+#version 450
 
 struct Complex {
   float r;
@@ -28,7 +28,10 @@ layout (std430, binding = 3) writeonly restrict buffer BufferMesh {
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-layout(r32f, binding = 0) uniform image2D outputImage;
+layout(r32f, binding = 0) uniform image2D heightImage;
+layout(r32f, binding = 1) uniform image2D displacementXImage;
+layout(r32f, binding = 2) uniform image2D displacementZImage;
+layout(rgba32f, binding = 3) uniform image2D WorldPositionImage;
 
 uniform uvec2 u_oceanSize;
 uniform uvec2 u_meshSize; 
@@ -55,11 +58,12 @@ void main() {
     float height = sign * h[oceanIndex].r;
     float deltaX = u_dispFactor * sign * dispX[oceanIndex].r;
     float deltaZ = u_dispFactor * sign * dispZ[oceanIndex].r;
-
+   
     float x = float(offset.x) + deltaX;
     float z = float(offset.y) + deltaZ;
 
     uint meshIndex = gid.y * u_meshSize.x + gid.x;
+
 
     mesh[meshIndex].x = x + (u_oceanSize.x * 0.5);
     mesh[meshIndex].y = height;
@@ -67,6 +71,9 @@ void main() {
 
     if (gid.x < u_oceanSize.x || gid.y < u_oceanSize.y) {
 	    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
-        imageStore(outputImage, pixelCoords, vec4(height, 0, 0, 0));
+        imageStore(heightImage, pixelCoords, vec4(height, 0, 0, 0));
+        imageStore(displacementXImage, pixelCoords, vec4(deltaX, 0, 0, 0));
+        imageStore(displacementZImage, pixelCoords, vec4(deltaZ, 0, 0, 0));
+        imageStore(WorldPositionImage, pixelCoords, vec4(mesh[meshIndex].x, height, mesh[meshIndex].z, 0));
     }
 }

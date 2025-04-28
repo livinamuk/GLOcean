@@ -1,19 +1,21 @@
-#version 400
-
+#version 460
 #include "../common/post_processing.glsl"
-uniform vec3 eyePos;
-uniform samplerCube environmentMap;
+
+uniform vec3 u_viewPos;
+layout(binding = 3) uniform samplerCube cubeMap;
 
 in vec3 position;
 in vec3 normal;
 
 out vec4 fragOut;
 
+uniform bool u_wireframe;
+uniform vec3 u_wireframeColor;
 
 void main () {
     vec3 lightDir = normalize(vec3(-0.5, 0.25, 1));
     
-    vec3 eyeVector = normalize(position - eyePos);
+    vec3 eyeVector = normalize(position - u_viewPos);
     vec3 n = normalize(normal);
     vec3 l = normalize(lightDir);
         
@@ -60,22 +62,33 @@ void main () {
     
     vec3 seaColour = vec3(0.286, 0.612, 0.576) * 0.05;
     vec3 sunColour = vec3(1.0, 1.0, 0.8) * 0.19;
-    vec3 seaBottomColour = vec3(texture(environmentMap, refracted));
-    vec3 skyColour = vec3(texture(environmentMap, reflected));
+    vec3 seaBottomColour = vec3(texture(cubeMap, refracted));
+    vec3 skyColour = vec3(texture(cubeMap, reflected));
       
     // Match the color tweaks used to render the skybox
-    skyColour.rgb = AdjustSaturation(skyColour.rgb, -0.5);
-    skyColour.rgb = AdjustLightness(skyColour.rgb, -0.75);
+    //skyColour.rgb = AdjustSaturation(skyColour.rgb, -0.5);
+    //skyColour.rgb = AdjustLightness(skyColour.rgb, -0.75);
     
     vec3 transmittedColour = mix(seaColour, seaBottomColour, transparencyFactor);
     vec3 reflectedColor = skyColour + specularFactor * sunColour;
     
     fragOut = clamp(vec4(mix(transmittedColour, reflectedColor, fresnel), 1.0), 0.0, 1.0);
     
-    fragOut.rgb = mix(fragOut.rgb, Tonemap_ACES(fragOut.rgb), 1.0);
+   // fragOut.rgb = mix(fragOut.rgb, Tonemap_ACES(fragOut.rgb), 1.0);
 
-    vec3 spec = vec3(specularFactor);
+    vec3 spec = vec3(reflected);
+
+    
+    //float ndotl = dot(n, l);
+    //fragOut.rgb = vec3(eyeCos);
+
     //fragOut = vec4(n, 1.0);
     //fragOut = vec4(spec, 1.0);
     //fragOut = vec4(4, 0, 0, 1);
+
+    if (u_wireframe) {
+        fragOut.rgb = u_wireframeColor;
+        fragOut.rgb = vec3(0,0.5,0);
+    }
+    
 }

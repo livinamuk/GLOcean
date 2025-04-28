@@ -1,6 +1,8 @@
 #version 430
 layout(local_size_x = 16, local_size_y = 16) in;
 
+layout(rgba32f, binding = 0) uniform image2D NormalsImage;
+
 struct Complex { 
     float r;
     float i;
@@ -49,4 +51,9 @@ void main() {
     mesh[meshIdx].nx = n.x;
     mesh[meshIdx].ny = n.y;
     mesh[meshIdx].nz = n.z;
+    
+    if (gid.x < u_oceanSize.x || gid.y < u_oceanSize.y) {
+	    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
+        imageStore(NormalsImage, pixelCoords, vec4(n.x, n.y, n.z, 0));
+    }
 }

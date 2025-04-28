@@ -13,10 +13,10 @@
 namespace Ocean {
 
     const float g_spectrumScaleFactor = 0.75f;
+    float g_oceanMeshSubdivisionFactor = 8.0f;
     glm::uvec2 g_oceanSize = glm::uvec2(128, 128);
-    glm::uvec2 g_meshSize = g_oceanSize + glm::uvec2(1, 1);
     glm::vec2 g_oceanLength = glm::vec2(g_oceanSize.x * g_spectrumScaleFactor, g_oceanSize.y * g_spectrumScaleFactor);
-    glm::vec2 g_mWindDir = glm::vec2(1.0f, 0.0f);
+    glm::vec2 g_mWindDir = glm::normalize(glm::vec2(1.0f, 0.0f));
     float g_windSpeed = 75.0f;
     float g_gravity = 9.8f;
     float g_amplitude = 0.00003f;
@@ -106,7 +106,7 @@ namespace Ocean {
                 }
             }
         }
-
+        
         return h0;
     }
 
@@ -123,10 +123,14 @@ namespace Ocean {
     }
 
     const glm::uvec2 GetMeshSize() {
-        return g_meshSize;
+        return g_oceanSize + glm::uvec2(1, 1);
     }
 
     const glm::vec2 GetOceanLength() {
         return g_oceanLength;
+    }
+
+    const glm::uvec2 GetTesslationMeshSize() {
+        return Ocean::GetOceanSize() / glm::uvec2(g_oceanMeshSubdivisionFactor) + glm::uvec2(1);
     }
 }

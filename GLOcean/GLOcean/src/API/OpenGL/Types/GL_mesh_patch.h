@@ -9,6 +9,7 @@
 struct OpenGLMeshPatch {
     OpenGLMeshPatch() = default;
     void Resize(int width, int height);
+    void Resize2(int width, int height);
 
     const size_t GetWidth() const           { return m_width; }
     const size_t GetHeight() const          { return m_height; }
@@ -19,6 +20,7 @@ struct OpenGLMeshPatch {
 
 private:
     void CreateBuffers();
+    void CreateBuffers2();
     void CleanUp();
 
     std::vector<VertexPN> m_vertices;

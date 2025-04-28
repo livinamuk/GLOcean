@@ -21,6 +21,7 @@ namespace Camera {
         //g_transform.position = glm::vec3(3.44, 0.55, 6.5);
         //g_transform.rotation = glm::vec3(-0.12, 3.14f, 0.00);
         g_transform.position = glm::vec3(18.0, 0.0, 8);
+        g_transform.position = glm::vec3(0.0, 0.0, -2);
         g_transform.rotation = glm::vec3(-0.40, 3.34, 0.00);
 
         double x, y;
@@ -50,7 +51,7 @@ namespace Camera {
         // Speed factor
         float speedFactor = 1.0f;
         if (Input::KeyDown(GLFW_KEY_LEFT_SHIFT)) {
-            speedFactor = 0.425f;
+            speedFactor *= 5.0f;
         }
         // WSAD
         glm::vec3 displacement = glm::vec3(0);
@@ -71,10 +72,10 @@ namespace Camera {
 
         // View height
         float heightSpeed = 3.0f;
-        if (Input::KeyDown(HELL_KEY_SPACE)) {
+        if (Input::KeyDown(HELL_KEY_Q)) {
             g_transform.position.y += deltaTime * heightSpeed * speedFactor;
         }
-        if (Input::KeyDown(GLFW_KEY_LEFT_CONTROL)) {
+        if (Input::KeyDown(GLFW_KEY_E)) {
             g_transform.position.y -= deltaTime * heightSpeed * speedFactor;
         }
     }

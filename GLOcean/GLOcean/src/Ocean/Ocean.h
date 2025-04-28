@@ -23,5 +23,6 @@ namespace Ocean {
     const glm::uvec2 GetOceanSize();
     const glm::uvec2 GetMeshSize();
     const glm::vec2 GetOceanLength();
+    const glm::uvec2 GetTesslationMeshSize();
 
 };

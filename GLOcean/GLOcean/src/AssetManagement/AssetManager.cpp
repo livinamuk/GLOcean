@@ -40,6 +40,20 @@ namespace AssetManager {
         for (Texture& texture : g_textures) {
             texture.CheckForBakeCompletion();
         }
+
+        static bool baked = false;
+        if (baked) {
+            return;
+        }
+
+        for (Texture& texture : g_textures) {
+            if (!texture.BakeComplete()) {
+                return;
+            }
+        }
+        std::cout << "done\n";
+        baked = true;
+        OpenGLBackend::CleanUpBakingPBOs();
     }
 
     void AddItemToLoadLog(std::string text) {

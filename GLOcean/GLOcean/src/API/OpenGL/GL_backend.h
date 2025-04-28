@@ -15,6 +15,7 @@ namespace OpenGLBackend {
     void SetWindowedMode(const WindowedMode& windowedMode);
     void ToggleFullscreen();
     void ForceCloseWindow();
+    void CleanUpBakingPBOs();
     double GetMouseX();
     double GetMouseY();
     int GetWindowWidth();

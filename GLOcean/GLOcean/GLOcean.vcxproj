@@ -14,6 +14,7 @@
     <ClCompile Include="src\API\OpenGL\GL_backend.cpp" />
     <ClCompile Include="src\API\OpenGL\GL_renderer.cpp" />
     <ClCompile Include="src\API\OpenGL\GL_renderer_debug.cpp" />
+    <ClCompile Include="src\API\OpenGL\Types\GL_framebuffer.cpp" />
     <ClCompile Include="src\API\OpenGL\Types\GL_mesh_patch.cpp" />
     <ClCompile Include="src\API\OpenGL\Types\GL_shader.cpp" />
     <ClCompile Include="src\API\OpenGL\Types\GL_texture.cpp" />
@@ -45,6 +46,10 @@
     <None Include="res\shaders\OpenGL\gl_hair_depth_peel.frag" />
     <None Include="res\shaders\OpenGL\gl_hair_depth_peel.vert" />
     <None Include="res\shaders\OpenGL\gl_hair_layer_composite.comp" />
+    <None Include="res\shaders\OpenGL\GL_ocean_geometry.tesc" />
+    <None Include="res\shaders\OpenGL\GL_ocean_geometry.tese" />
+    <None Include="res\shaders\OpenGL\GL_ocean_wireframe.frag" />
+    <None Include="res\shaders\OpenGL\GL_ocean_wireframe.vert" />
     <None Include="res\shaders\OpenGL\gl_solid_color.frag" />
     <None Include="res\shaders\OpenGL\gl_solid_color.vert" />
     <None Include="res\shaders\OpenGL\gl_text_blitter.frag" />
@@ -64,7 +69,7 @@
     <ClInclude Include="src\API\OpenGL\GL_util.hpp" />
     <ClInclude Include="src\API\OpenGL\Types\GL_detachedMesh.hpp" />
     <ClInclude Include="src\API\OpenGL\Types\GL_fontMesh.hpp" />
-    <ClInclude Include="src\API\OpenGL\Types\GL_frameBuffer.hpp" />
+    <ClInclude Include="src\API\OpenGL\Types\GL_frameBuffer.h" />
     <ClInclude Include="src\API\OpenGL\Types\GL_pbo.hpp" />
     <ClInclude Include="src\API\OpenGL\Types\GL_shader.h" />
     <ClInclude Include="src\API\OpenGL\Types\GL_texture.h" />

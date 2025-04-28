@@ -4,6 +4,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <regex>
 
 void ParseFile(const std::string& filepath, std::string& outputString, std::vector<std::string>& lineToFile, std::vector<std::string>& includedPaths);
 int GetErrorLineNumber(const std::string& error);
@@ -16,12 +17,12 @@ void Shader::Use() {
 }
 
 bool Shader::Load(std::vector<std::string> shaderPaths) {
-    // Compile shader modules
+
     std::vector<ShaderModule> modules;
     for (std::string& shaderPath : shaderPaths) {
         modules.push_back(shaderPath);
     }
-    // Print compilation errors
+
     bool errorsFound = false;
     for (ShaderModule& module : modules) {
         if (module.CompilationFailed()) {
@@ -41,16 +42,22 @@ bool Shader::Load(std::vector<std::string> shaderPaths) {
         std::cout << "-------------------------------------------------------------------------\n";
         return false;
     }
-    // Attempt to link
+
+    // Link stage
     int tempHandle = glCreateProgram();
     for (ShaderModule& module : modules) {
         glAttachShader(tempHandle, module.GetHandle());
     }
     glLinkProgram(tempHandle);
-    std::string linkingErrors = GetLinkingErrors(tempHandle);
 
-    // Print any errors
-    if (linkingErrors.length()) {
+    GLint success = 0;
+    glGetProgramiv(tempHandle, GL_LINK_STATUS, &success);
+    if (success == GL_FALSE) {
+        GLint logLength = 0;
+        glGetProgramiv(tempHandle, GL_INFO_LOG_LENGTH, &logLength);
+        std::vector<char> log(logLength);
+        glGetProgramInfoLog(tempHandle, logLength, &logLength, log.data());
+
         std::cout << "\n-------------------------------------------------------------------------\n\n";
         std::cout << " LINKING ERROR: ";
         for (int i = 0; i < modules.size(); i++) {
@@ -59,23 +66,61 @@ bool Shader::Load(std::vector<std::string> shaderPaths) {
                 std::cout << "/";
             }
         }
-        std::cout << linkingErrors << "\n";
+        std::cout << "\n\n" << log.data() << "\n";
         std::cout << "-------------------------------------------------------------------------\n";
-        for (ShaderModule& module : modules) {
-            glDeleteShader(tempHandle);
-        }
+
+        glDeleteProgram(tempHandle);
         return false;
     }
-    // Otherwise store the handle to the compiled shader
-    else {
-        if (m_handle != -1) {
-            glDeleteProgram(m_handle);
-        }
-        m_handle = tempHandle;
-        m_uniformLocations.clear();
+
+    if (m_handle != -1) {
+        glDeleteProgram(m_handle);
     }
+    m_handle = tempHandle;
+    m_uniformLocations.clear();
+
+    /*
+    // Auto-bind samplers declared with layout(binding=N)
+    glUseProgram(m_handle);
+    std::regex samplerRe(R"(layout\s*\(\s*binding\s*=\s*(\d+)\s*\)\s*uniform\s*(sampler\w+)\s+(\w+)\s*;)");
+    const std::string baseDir = "res/shaders/OpenGL/";
+
+    for (const auto& filename : shaderPaths) {
+
+        if (filename != "GL_ocean_geometry.tese") continue;
+
+        std::string fullPath = baseDir + filename;
+       // std::cout << "[DEBUG] Processing: " << fullPath << "\n";
+        std::ifstream in(fullPath);
+        if (!in) {
+            std::cout << "[DEBUG]  <failed to open>\n";
+            continue;
+        }
+
+        std::string line;
+        int lineNum = 1;
+        while (std::getline(in, line)) {
+            //std::cout << "[DEBUG]  L" << lineNum << ": " << line << "\n";
+            std::smatch m;
+            if (std::regex_search(line, m, samplerRe)) {
+                std::cout << "[DEBUG]   Matched: unit=" << m[1]
+                    << ", type=" << m[2]
+                    << ", name=" << m[3] << "\n";
+                int unit = std::stoi(m[1].str());
+                std::string name = m[3].str();
+                GLint loc = glGetUniformLocation(m_handle, name.c_str());
+                std::cout << "[DEBUG]   Location of '" << name << "' = " << loc << "\n";
+                if (loc >= 0) {
+                    glUniform1i(loc, unit);
+                    std::cout << "[DEBUG]   Bound '" << name << "' to unit " << unit << "\n";
+                }
+            }
+            ++lineNum;
+        }
+    }*/
+
     for (ShaderModule& module : modules) {
-        glDeleteShader(tempHandle);
+        glDeleteShader(module.GetHandle());
     }
     return true;
 }
