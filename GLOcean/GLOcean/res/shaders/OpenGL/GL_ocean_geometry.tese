@@ -16,7 +16,6 @@ const float coordScaleFactor = 8.0;
 layout(binding = 0) uniform sampler2D heightTex;
 layout(binding = 1) uniform sampler2D dispXTex;
 layout(binding = 2) uniform sampler2D dispZTex;
-//layout(binding = 4) uniform sampler2D worldPositionTexture;
 layout(binding = 5) uniform sampler2D normalTexture;
 
 void main() {
@@ -40,6 +39,7 @@ void main() {
     float height = texture(heightTex, uv).r;
 
     vec3 localPosition  = vec3(fftSpacePosition) + vec3(deltaX, height, deltaZ);
+    
     WorldPos = vec4(u_model * vec4(localPosition.xyz, 1.0)).xyz;
     Normal = texture(normalTexture, uv).rgb;
     

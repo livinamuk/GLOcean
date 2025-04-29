@@ -26,54 +26,71 @@ layout (std430, binding = 3) writeonly restrict buffer BufferMesh {
   VertexPN mesh[];
 };
 
+layout(std430, binding = 4) readonly buffer BufferGradX  { Complex gradX[]; };
+layout(std430, binding = 5) readonly buffer BufferGradZ  { Complex gradZ[]; };
+
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 layout(r32f, binding = 0) uniform image2D heightImage;
 layout(r32f, binding = 1) uniform image2D displacementXImage;
 layout(r32f, binding = 2) uniform image2D displacementZImage;
-layout(rgba32f, binding = 3) uniform image2D WorldPositionImage;
+//layout(rgba32f, binding = 3) uniform image2D WorldPositionImage;
+layout(rgba32f, binding = 4) uniform image2D NormalsImage;
 
 uniform uvec2 u_oceanSize;
 uniform uvec2 u_meshSize; 
 uniform float u_dispFactor;
 
+int wrapIndex(int value, int modulus) {
+    int r = value % modulus;
+    return r < 0 ? r + modulus : r;
+}
+
 void main() {
-    uvec2 gid = gl_GlobalInvocationID.xy;
+    uvec2 meshUV = gl_GlobalInvocationID.xy;
 
     // Bail if out of bounds
-    if (gid.x >= u_meshSize.x || gid.y >= u_meshSize.y) {
+    if (meshUV.x >= u_meshSize.x || meshUV.y >= u_meshSize.y) {
         return;
     }
 
-    uint vertIndex = gid.y * u_meshSize.x + gid.x;
+    uint meshIndex = meshUV.y * u_meshSize.x + meshUV.x;
 
-    ivec2 offset = ivec2(gid) - ivec2(u_meshSize) / 2;
+    ivec2 relativeUV = ivec2(meshUV) - ivec2(u_meshSize) / 2;
 
-    uint ox = uint((offset.x % int(u_oceanSize.x) + int(u_oceanSize.x)) % int(u_oceanSize.x));
-    uint oz = uint((offset.y % int(u_oceanSize.y) + int(u_oceanSize.y)) % int(u_oceanSize.y));
-    uint oceanIndex = oz * u_oceanSize.x + ox;
+    uint wrappedU = uint((relativeUV.x % int(u_oceanSize.x) + int(u_oceanSize.x)) % int(u_oceanSize.x));
+    uint wrappedV = uint((relativeUV.y % int(u_oceanSize.y) + int(u_oceanSize.y)) % int(u_oceanSize.y));
+    uint fftIndex = wrappedV * u_oceanSize.x + wrappedU;
 
-    float sign = ((offset.x + offset.y) & 1) != 0 ? 1.0 : -1.0;
+    float checkerSign = ((relativeUV.x + relativeUV.y) & 1) != 0 ? 1.0 : -1.0;
 
-    float height = sign * h[oceanIndex].r;
-    float deltaX = u_dispFactor * sign * dispX[oceanIndex].r;
-    float deltaZ = u_dispFactor * sign * dispZ[oceanIndex].r;
+    // Height
+    float height = checkerSign * h[fftIndex].r;
+
+    // Displacement
+    float dispX = u_dispFactor * checkerSign * dispX[fftIndex].r;
+    float dispZ = u_dispFactor * checkerSign * dispZ[fftIndex].r;
    
-    float x = float(offset.x) + deltaX;
-    float z = float(offset.y) + deltaZ;
+    float x = float(relativeUV.x) + dispX;
+    float z = float(relativeUV.y) + dispZ;
 
-    uint meshIndex = gid.y * u_meshSize.x + gid.x;
+    // Compute normals
+    ivec2 oceanCenter = ivec2(u_oceanSize) / 2;
+    ivec2 gradSampleUV = ivec2(meshUV) - oceanCenter;
+    int wrappedGradU = wrapIndex(gradSampleUV.x, int(u_oceanSize.x));
+    int wrappedGradV = wrapIndex(gradSampleUV.y, int(u_oceanSize.y));
+    uint gradIndex = uint(wrappedGradV) * u_oceanSize.x + uint(wrappedGradU);
 
+    float gx = gradX[gradIndex].r;
+    float gz = gradZ[gradIndex].r;
+    float normalFlipSign = ((gradSampleUV.x + gradSampleUV.y) & 1) != 0 ? -1.0 : 1.0;
+    vec3 normal = normalize(vec3(normalFlipSign * gx, 1.0, normalFlipSign * gz));
 
-    mesh[meshIndex].x = x + (u_oceanSize.x * 0.5);
-    mesh[meshIndex].y = height;
-    mesh[meshIndex].z = z + (u_oceanSize.x * 0.5);
-
-    if (gid.x < u_oceanSize.x || gid.y < u_oceanSize.y) {
-	    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
-        imageStore(heightImage, pixelCoords, vec4(height, 0, 0, 0));
-        imageStore(displacementXImage, pixelCoords, vec4(deltaX, 0, 0, 0));
-        imageStore(displacementZImage, pixelCoords, vec4(deltaZ, 0, 0, 0));
-        imageStore(WorldPositionImage, pixelCoords, vec4(mesh[meshIndex].x, height, mesh[meshIndex].z, 0));
+    if (meshUV.x < u_oceanSize.x || meshUV.y < u_oceanSize.y) {
+        ivec2 outUV = ivec2(meshUV);
+        imageStore(heightImage,        outUV, vec4(height, 0, 0, 0));
+        imageStore(displacementXImage, outUV, vec4(dispX,  0, 0, 0));
+        imageStore(displacementZImage, outUV, vec4(dispZ,  0, 0, 0));
+        imageStore(NormalsImage,        outUV, vec4(normal, 0));
     }
 }

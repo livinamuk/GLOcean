@@ -46,12 +46,19 @@ struct Skybox {
 
         // Load cubemap textures
         std::vector<std::string> skyboxTextureFilePaths;
-        skyboxTextureFilePaths.push_back("res/textures/right.png");
-        skyboxTextureFilePaths.push_back("res/textures/left.png");
-        skyboxTextureFilePaths.push_back("res/textures/top.png");
-        skyboxTextureFilePaths.push_back("res/textures/bottom.png");
-        skyboxTextureFilePaths.push_back("res/textures/front.png");
-        skyboxTextureFilePaths.push_back("res/textures/back.png");
+        //skyboxTextureFilePaths.push_back("res/textures/right.png");
+        //skyboxTextureFilePaths.push_back("res/textures/left.png");
+        //skyboxTextureFilePaths.push_back("res/textures/top.png");
+        //skyboxTextureFilePaths.push_back("res/textures/bottom.png");
+        //skyboxTextureFilePaths.push_back("res/textures/front.png");
+        //skyboxTextureFilePaths.push_back("res/textures/back.png");
+        skyboxTextureFilePaths.push_back("res/textures/px.png");    // right
+        skyboxTextureFilePaths.push_back("res/textures/nx.png");    // left
+        skyboxTextureFilePaths.push_back("res/textures/py.png");    // top
+        skyboxTextureFilePaths.push_back("res/textures/ny.png");    // bottom
+        skyboxTextureFilePaths.push_back("res/textures/pz.png");    // front
+        skyboxTextureFilePaths.push_back("res/textures/nz.png");    // back
+
         cubemap.Create(skyboxTextureFilePaths);
 
         // Init cube vertices (for skybox)	

@@ -54,3 +54,18 @@ vec3 microfacetBRDF(in vec3 L, in vec3 V, in vec3 N, in vec3 baseColor, in float
 
   return diffuse + specular;
 }
+
+vec3 microfacetSpecular(in vec3 L, in vec3 V, in vec3 N, in vec3 F0, in float roughness) {  
+    vec3 H = normalize(L + V);  
+
+    float NoV = clamp(dot(N, V), 0.0, 1.0);  
+    float NoL = clamp(dot(N, L), 0.0, 1.0);  
+    float NoH = clamp(dot(N, H), 0.0, 1.0);  
+    float VoH = clamp(dot(V, H), 0.0, 1.0);  
+
+    float D = D_GGX(NoH, roughness);  
+    float G = G_Smith(NoV, NoL, roughness);  
+    vec3  F = fresnelSchlick(VoH, F0);  
+
+    return (D * G * F) / max(4.0 * NoV * NoL, 0.001);  
+}
