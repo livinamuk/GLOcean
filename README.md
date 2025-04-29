@@ -2,7 +2,7 @@
 
 ![Screenshot](Screenshot.png)
 
-FFT ocean using the GLFFT library
+OpenGL ocean rendered with tessellation shaders and the Fast Fourier Transform library, GLFFT.
 
 ```
 git clone https://github.com/livinamuk/GLOcean.git
