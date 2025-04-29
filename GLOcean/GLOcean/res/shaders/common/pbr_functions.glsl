@@ -1,11 +1,11 @@
 #include "../common/constants.glsl"
 
 float D_GGX(float NoH, float roughness) {
-  float alpha = roughness * roughness;
-  float alpha2 = alpha * alpha;
-  float NoH2 = NoH * NoH;
-  float b = (NoH2 * (alpha2 - 1.0) + 1.0);
-  return alpha2 / (PI * b * b);
+    float alpha = roughness * roughness;
+    float alpha2 = alpha * alpha;
+    float NoH2 = NoH * NoH;
+    float b = (NoH2 * (alpha2 - 1.0) + 1.0);
+    return alpha2 / (PI * b * b);
 }
 
 float G1_GGX_Schlick(float NdotV, float roughness) {

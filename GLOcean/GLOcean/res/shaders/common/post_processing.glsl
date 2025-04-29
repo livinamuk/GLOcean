@@ -49,3 +49,7 @@ vec3 AdjustLightness(vec3 color, float lightness) {
     float factor = 1.0 + lightness;
     return clamp(color * factor, 0.0, 1.0);
 }
+
+vec3 gammaCorrect(vec3 color) {
+    return pow(color, vec3(1.0/2.2));
+}

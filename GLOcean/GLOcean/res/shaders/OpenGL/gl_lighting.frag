@@ -54,12 +54,14 @@ void main() {
 
     float finalAlpha = baseColor.a;
     
-    vec3 finalColor = directLighting.rgb + ambientLighting;
+    vec3 finalColor = directLighting.rgb;// + ambientLighting;
 
     // Tone mapping
 	finalColor = mix(finalColor, Tonemap_ACES(finalColor), 1.0);
 	finalColor = pow(finalColor, vec3(1.0/2.2));
 	finalColor = mix(finalColor, Tonemap_ACES(finalColor), 0.235);
+
+    //finalColor = normal.rgb;
 
     finalColor.rgb = finalColor.rgb * finalAlpha;
     LightingOut = vec4(finalColor, finalAlpha);

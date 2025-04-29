@@ -20,7 +20,8 @@ namespace Ocean {
 
     const float GetDisplacementFactor();
     const float GetGravity();
-    const glm::uvec2 GetOceanSize();
+    const float GetMeshSubdivisionFactor();
+    const glm::uvec2 GetFFTGridSize();
     const glm::uvec2 GetMeshSize();
     const glm::vec2 GetOceanLength();
     const glm::uvec2 GetTesslationMeshSize();

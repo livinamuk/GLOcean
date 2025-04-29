@@ -31,6 +31,18 @@ namespace Scene {
         for (GameObject& gameObject : g_gameObjects) {
             gameObject.UpdateRenderItems();
 
+            if (gameObject.m_name == "Mermaid") {
+                float amt = 0.5f;
+                if (Input::KeyDown(HELL_KEY_LEFT)) {
+                    gameObject.m_transform.rotation.y += deltaTime * amt;
+                        std::cout << gameObject.m_transform.rotation.y << "\n";
+                }
+                if (Input::KeyDown(HELL_KEY_RIGHT)) {
+                    gameObject.m_transform.rotation.y -= deltaTime * amt;
+                        std::cout << gameObject.m_transform.rotation.y << "\n";
+                }
+            }
+
             // Merge render items into global vectors
             g_renderItems.insert(g_renderItems.end(), gameObject.GetRenderItems().begin(), gameObject.GetRenderItems().end());
             g_renderItemsBlended.insert(g_renderItemsBlended.end(), gameObject.GetRenderItemsBlended().begin(), gameObject.GetRenderItemsBlended().end());

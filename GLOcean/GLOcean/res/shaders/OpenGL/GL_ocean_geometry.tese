@@ -9,9 +9,7 @@ layout(location = 1) out mediump vec3 Normal;
 
 uniform mat4 u_model;
 uniform mat4 u_projectionView;
-uniform vec2 u_oceanSize;
-const float inputPatchDim = 16.0;
-const float coordScaleFactor = 8.0;
+uniform vec2 u_fftGridSize;
 
 layout(binding = 0) uniform sampler2D heightTex;
 layout(binding = 1) uniform sampler2D dispXTex;
@@ -29,14 +27,14 @@ void main() {
     float u = gl_TessCoord.x;
     float v = gl_TessCoord.y;
 
-    vec3 pos = mix(mix(p0, p1, u), mix(p3, p2, u), v);// * 8; // make this 8 a uniform
+    vec3 pos = mix(mix(p0, p1, u), mix(p3, p2, u), v);
     vec3 fftSpacePosition =  pos;
 
-    highp vec2 uv = fract(fftSpacePosition.xz / vec2(128));
+    highp vec2 uv = fract(fftSpacePosition.xz / u_fftGridSize);
    
     float deltaX = texture(dispXTex, uv).r;
     float deltaZ = texture(dispZTex, uv).r;
-    float height = texture(heightTex, uv).r;
+    float height = texture(heightTex, uv).r * 0.5;
 
     vec3 localPosition  = vec3(fftSpacePosition) + vec3(deltaX, height, deltaZ);
     

@@ -33,11 +33,9 @@ namespace OpenGLRenderer {
         Shader hairLayerComposite;
         Shader skybox;
         Shader oceanGeometry;
-        Shader oceanGeometryOld;
         Shader oceanWireframe;
         Shader oceanCalculateSpectrum;
         Shader oceanUpdateMesh;
-        Shader oceanUpdateNormals;
         Shader underwaterTest;
     } g_shaders;
 
@@ -49,7 +47,6 @@ namespace OpenGLRenderer {
 
 
     Skybox g_skybox;
-    OpenGLMeshPatch g_oceanMeshPatch;
     OpenGLMeshPatch g_tesselationPatch;
 
     OpenGLSSBO g_fftH0SSBO;
@@ -90,7 +87,7 @@ namespace OpenGLRenderer {
         g_frameBuffers.hair.CreateAttachment("ViewspaceDepthPrevious", GL_R32F);
         g_frameBuffers.hair.CreateAttachment("Composite", GL_RGBA8);
 
-        g_frameBuffers.fft.Create("FFT", Ocean::GetOceanSize().x, Ocean::GetOceanSize().y);
+        g_frameBuffers.fft.Create("FFT", Ocean::GetFFTGridSize().x, Ocean::GetFFTGridSize().y);
         g_frameBuffers.fft.CreateAttachment("Height", GL_R32F, GL_NEAREST, GL_REPEAT);
         g_frameBuffers.fft.CreateAttachment("DisplacementX", GL_R32F, GL_NEAREST, GL_REPEAT);
         g_frameBuffers.fft.CreateAttachment("DisplacementZ", GL_R32F, GL_NEAREST, GL_REPEAT);
@@ -366,7 +363,7 @@ namespace OpenGLRenderer {
                     glDrawElements(GL_TRIANGLES, mesh->GetIndexCount(), GL_UNSIGNED_INT, 0);
                 }
             }
-            // TODO!: when you port this you can output previous viewspace depth in the pass above
+            // TODO!: when you port this to the main engine you can output previous viewspace depth in the pass above
             CopyColorBuffer(g_frameBuffers.hair, g_frameBuffers.hair, "ViewspaceDepth", "ViewspaceDepthPrevious");
 
             // Composite
@@ -425,15 +422,12 @@ namespace OpenGLRenderer {
     }
 
     void InitOceanGPUState() {
-
-        g_oceanMeshPatch.Resize(Ocean::GetMeshSize().x, Ocean::GetMeshSize().y);
-
         g_tesselationPatch.Resize2(Ocean::GetTesslationMeshSize().x, Ocean::GetTesslationMeshSize().y);
 
         GLbitfield staticFlags = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
         GLbitfield dynamicFlags = GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
 
-        const glm::uvec2 oceanSize = Ocean::GetOceanSize();
+        const glm::uvec2 oceanSize = Ocean::GetFFTGridSize();
 
         g_fftH0SSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), staticFlags);
         g_fftSpectrumInSSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
@@ -464,15 +458,15 @@ namespace OpenGLRenderer {
 
         //globalTime = 0;
 
-        const glm::uvec2 oceanSize = Ocean::GetOceanSize();
+        const glm::uvec2 fftGridSize = Ocean::GetFFTGridSize();
         const glm::uvec2 meshSize = Ocean::GetMeshSize();
         const glm::vec2 oceanLength = Ocean::GetOceanLength();
         const float gravity = Ocean::GetGravity();
         const float displacementFactor = Ocean::GetDisplacementFactor();
 
         const GLuint blocksPerSide = 16;
-        const GLuint fftBlockSizeX = oceanSize.x / blocksPerSide;
-        const GLuint fftBlockSizeY = oceanSize.y / blocksPerSide;
+        const GLuint fftBlockSizeX = fftGridSize.x / blocksPerSide;
+        const GLuint fftBlockSizeY = fftGridSize.y / blocksPerSide;
         const GLuint meshBlockSizeX = (meshSize.x + 16 - 1) / blocksPerSide;
         const GLuint meshBlockSizeY = (meshSize.y + 16 - 1) / blocksPerSide;
 
@@ -485,7 +479,7 @@ namespace OpenGLRenderer {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, g_fftGradZInSSBO.GetHandle());
 
         g_shaders.oceanCalculateSpectrum.Use();
-        g_shaders.oceanCalculateSpectrum.SetUvec2("oceanSize", oceanSize);
+        g_shaders.oceanCalculateSpectrum.SetUvec2("oceanSize", fftGridSize);
         g_shaders.oceanCalculateSpectrum.SetVec2("oceanLength", oceanLength);
         g_shaders.oceanCalculateSpectrum.SetFloat("g", gravity);
         g_shaders.oceanCalculateSpectrum.SetFloat("t", globalTime);
@@ -508,29 +502,15 @@ namespace OpenGLRenderer {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_fftSpectrumOutSSBO.GetHandle());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g_fftDispXOutSSBO.GetHandle());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, g_fftDispZOutSSBO.GetHandle());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, g_oceanMeshPatch.GetVBO());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, g_fftGradXOutSSBO.GetHandle());
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, g_fftGradZOutSSBO.GetHandle());
         g_shaders.oceanUpdateMesh.Use();
-        g_shaders.oceanUpdateMesh.SetUvec2("u_oceanSize", oceanSize);
+        g_shaders.oceanUpdateMesh.SetUvec2("u_fftGridSize", fftGridSize);
         g_shaders.oceanUpdateMesh.SetUvec2("u_meshSize", meshSize);
         g_shaders.oceanUpdateMesh.SetFloat("u_dispFactor", displacementFactor);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glFinish();
         glDispatchCompute(meshBlockSizeX, meshBlockSizeY, 1);
-
-        // Update normals
-        glBindImageTexture(0, g_frameBuffers.fft.GetColorAttachmentHandleByName("Normals"), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_fftSpectrumOutSSBO.GetHandle());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g_fftGradXOutSSBO.GetHandle());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, g_fftGradZOutSSBO.GetHandle());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, g_oceanMeshPatch.GetVBO());
-        g_shaders.oceanUpdateNormals.Use();
-        g_shaders.oceanUpdateNormals.SetUvec2("u_oceanSize", oceanSize);
-        g_shaders.oceanUpdateNormals.SetUvec2("u_meshSize", meshSize);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
-        glDispatchCompute(meshBlockSizeX, meshBlockSizeY, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
     }
 
     void CheckGLErrors(const char* context) {
@@ -551,7 +531,7 @@ namespace OpenGLRenderer {
     }
 
     void RenderOcean() {
-        CheckGLErrors("start of RenderOcean");
+        //CheckGLErrors("start of RenderOcean");
 
         static bool wireframe = false;
         static bool swap = false;
@@ -567,14 +547,16 @@ namespace OpenGLRenderer {
             swap = !swap;
         }
 
-        int min = -10;
-        int max = 10;
-        float offset = 512.0f * 0.0325f;
+        float scale = 8.0f / Ocean::GetFFTGridSize().x;
+
+        int min = -20;
+        int max = 20;
+        float offset = (max - min) * Ocean::GetFFTGridSize().x * scale;
 
         if (test) {
             min = 0;
             max = 1;
-            offset = 128 * 0.0325f;
+            offset = Ocean::GetFFTGridSize().x * scale;
         }
 
         glm::mat4 projectionMatrix = Camera::GetProjectionMatrix();
@@ -582,23 +564,14 @@ namespace OpenGLRenderer {
         glm::vec3 viewPos = Camera::GetViewPos();
         glm::mat4 projectionView = projectionMatrix * viewMatrix;
 
-        int patchCount = 1;
-        float scale = 0.0325f;
-        float patchOffset = Ocean::GetOceanSize().y * scale;
-
-        Transform patchTransform;
-        patchTransform.scale = glm::vec3(scale);
+        float patchOffset = Ocean::GetFFTGridSize().y * scale;
 
         Transform tesseleationTransform;
-        tesseleationTransform.scale = glm::vec3(scale);// *8.0f;
+        tesseleationTransform.scale = glm::vec3(scale);
 
         g_frameBuffers.main.Bind();
         g_frameBuffers.main.SetViewport();
         g_frameBuffers.main.DrawBuffers({ "Color" });
-
-        g_shaders.oceanGeometryOld.Use();
-        g_shaders.oceanGeometryOld.SetVec3("u_viewPos", viewPos);
-        g_shaders.oceanGeometryOld.SetMat4("u_projectionView", projectionView);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft.GetColorAttachmentHandleByName("Height"));
@@ -630,31 +603,17 @@ namespace OpenGLRenderer {
         glEnable(GL_CULL_FACE);
         glEnable(GL_DEPTH_TEST);
 
-        // Old ocean
-        g_shaders.oceanGeometryOld.Use();
-        g_shaders.oceanGeometryOld.SetVec3("u_viewPos", viewPos);
-        g_shaders.oceanGeometryOld.SetVec3("u_wireframeColor", GREEN);
-        g_shaders.oceanGeometryOld.SetBool("u_wireframe", wireframe);
-        glBindVertexArray(g_oceanMeshPatch.GetVAO());
-        for (int x = min; x < max; x++) {
-            for (int z = min; z < max; z++) {
-                patchTransform.position = glm::vec3(patchOffset * x, -0.65f, patchOffset * z);
-                if (!swap) {
-                    patchTransform.position += glm::vec3(offset, 0.0f, 0.0f);
-                }
-                g_shaders.oceanGeometryOld.SetMat4("u_model", patchTransform.to_mat4());
-                //glDrawElements(GL_TRIANGLE_STRIP, g_oceanMeshPatch.GetIndexCount(), GL_UNSIGNED_INT, nullptr);
-            }
-        }
-
-        // Tesselated ocean
+        // Tessellated ocean
         tesseleationTransform.position.x = -patchOffset;
         g_shaders.oceanGeometry.Use();
         g_shaders.oceanGeometry.SetMat4("u_projectionView", projectionView);
         g_shaders.oceanGeometry.SetVec3("u_wireframeColor", GREEN);
         g_shaders.oceanGeometry.SetMat4("u_model", tesseleationTransform.to_mat4());
         g_shaders.oceanGeometry.SetVec3("u_viewPos", viewPos);
+        g_shaders.oceanGeometry.SetVec2("u_fftGridSize", Ocean::GetFFTGridSize());
         g_shaders.oceanGeometry.SetBool("u_wireframe", wireframe);
+        g_shaders.oceanGeometry.SetFloat("u_meshSubdivisionFactor", Ocean::GetMeshSubdivisionFactor());
+
         glBindVertexArray(g_tesselationPatch.GetVAO());
         glPatchParameteri(GL_PATCH_VERTICES, 4);
         for (int x = min; x < max; x++) {
@@ -667,22 +626,13 @@ namespace OpenGLRenderer {
                 glDrawElements(GL_PATCHES, g_tesselationPatch.GetIndexCount(), GL_UNSIGNED_INT, nullptr);
             }
         }
-
-
-        //DrawPoint(glm::vec3(0, 0, 0), RED);
-        //DrawPoint(glm::vec3(128, 0, 128) * scale, YELLOW);
-        //DrawPoint(glm::vec3(256, 0, 256) * scale, BLUE);
-
         // Cleanup
         g_shaders.oceanGeometry.SetBool("u_wireframe", false);
-        g_shaders.oceanGeometryOld.Use();
-        g_shaders.oceanGeometryOld.SetBool("u_wireframe", false);
         glEnable(GL_DEPTH_TEST);
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
 
     void RenderSkyBox() {
-
         g_frameBuffers.main.Bind();
         g_frameBuffers.main.SetViewport();
         g_frameBuffers.main.DrawBuffers({ "Color" });
@@ -718,24 +668,15 @@ namespace OpenGLRenderer {
     }
 
     void LoadShaders() {
-
         if (g_shaders.hairfinalComposite.Load({ "gl_hair_final_composite.comp" }) &&
             g_shaders.hairLayerComposite.Load({ "gl_hair_layer_composite.comp" }) &&
             g_shaders.solidColor.Load({ "gl_solid_color.vert", "gl_solid_color.frag" }) &&
-
             g_shaders.skybox.Load({ "GL_skybox.vert", "GL_skybox.frag" }) &&
-            g_shaders.oceanGeometryOld.Load({ "GL_ocean_geometry_old.vert", "GL_ocean_geometry_old.frag" }) &&
             g_shaders.oceanGeometry.Load({ "GL_ocean_geometry.vert", "GL_ocean_geometry.frag" , "GL_ocean_geometry.tesc" , "GL_ocean_geometry.tese" }) &&
-            //g_shaders.oceanGeometry.Load({ "GL_ocean_geometry.vert", "GL_ocean_geometry.frag" , "GL_ocean_geometry.tesc" , "GL_ocean_geometry.tese", "GL_ocean_geometry.geom" }) &&
             g_shaders.oceanWireframe.Load({ "GL_ocean_wireframe.vert", "GL_ocean_wireframe.frag" }) &&
             g_shaders.oceanCalculateSpectrum.Load({ "GL_ocean_calculate_spectrum.comp" }) &&
             g_shaders.oceanUpdateMesh.Load({ "GL_ocean_update_mesh.comp" }) &&
-            g_shaders.oceanUpdateNormals.Load({ "GL_ocean_update_normals.comp" }) &&
-
             g_shaders.underwaterTest.Load({ "GL_underwater_test.comp" }) &&
-
-
-
             g_shaders.hairDepthPeel.Load({ "gl_hair_depth_peel.vert", "gl_hair_depth_peel.frag" }) &&
             g_shaders.lighting.Load({ "gl_lighting.vert", "gl_lighting.frag" }) &&
             g_shaders.textBlitter.Load({ "gl_text_blitter.vert", "gl_text_blitter.frag" })) {

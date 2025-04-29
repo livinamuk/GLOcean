@@ -37,7 +37,7 @@ layout(r32f, binding = 2) uniform image2D displacementZImage;
 //layout(rgba32f, binding = 3) uniform image2D WorldPositionImage;
 layout(rgba32f, binding = 4) uniform image2D NormalsImage;
 
-uniform uvec2 u_oceanSize;
+uniform uvec2 u_fftGridSize;
 uniform uvec2 u_meshSize; 
 uniform float u_dispFactor;
 
@@ -58,9 +58,9 @@ void main() {
 
     ivec2 relativeUV = ivec2(meshUV) - ivec2(u_meshSize) / 2;
 
-    uint wrappedU = uint((relativeUV.x % int(u_oceanSize.x) + int(u_oceanSize.x)) % int(u_oceanSize.x));
-    uint wrappedV = uint((relativeUV.y % int(u_oceanSize.y) + int(u_oceanSize.y)) % int(u_oceanSize.y));
-    uint fftIndex = wrappedV * u_oceanSize.x + wrappedU;
+    uint wrappedU = uint((relativeUV.x % int(u_fftGridSize.x) + int(u_fftGridSize.x)) % int(u_fftGridSize.x));
+    uint wrappedV = uint((relativeUV.y % int(u_fftGridSize.y) + int(u_fftGridSize.y)) % int(u_fftGridSize.y));
+    uint fftIndex = wrappedV * u_fftGridSize.x + wrappedU;
 
     float checkerSign = ((relativeUV.x + relativeUV.y) & 1) != 0 ? 1.0 : -1.0;
 
@@ -75,18 +75,22 @@ void main() {
     float z = float(relativeUV.y) + dispZ;
 
     // Compute normals
-    ivec2 oceanCenter = ivec2(u_oceanSize) / 2;
+    ivec2 oceanCenter = ivec2(u_fftGridSize) / 2;
     ivec2 gradSampleUV = ivec2(meshUV) - oceanCenter;
-    int wrappedGradU = wrapIndex(gradSampleUV.x, int(u_oceanSize.x));
-    int wrappedGradV = wrapIndex(gradSampleUV.y, int(u_oceanSize.y));
-    uint gradIndex = uint(wrappedGradV) * u_oceanSize.x + uint(wrappedGradU);
+    int wrappedGradU = wrapIndex(gradSampleUV.x, int(u_fftGridSize.x));
+    int wrappedGradV = wrapIndex(gradSampleUV.y, int(u_fftGridSize.y));
+    uint gradIndex = uint(wrappedGradV) * u_fftGridSize.x + uint(wrappedGradU);
 
     float gx = gradX[gradIndex].r;
     float gz = gradZ[gradIndex].r;
     float normalFlipSign = ((gradSampleUV.x + gradSampleUV.y) & 1) != 0 ? -1.0 : 1.0;
     vec3 normal = normalize(vec3(normalFlipSign * gx, 1.0, normalFlipSign * gz));
 
-    if (meshUV.x < u_oceanSize.x || meshUV.y < u_oceanSize.y) {
+    mesh[meshIndex].x = x + (u_fftGridSize.x * 0.5);
+    mesh[meshIndex].y = height;
+    mesh[meshIndex].z = z + (u_fftGridSize.x * 0.5);
+
+    if (meshUV.x < u_fftGridSize.x || meshUV.y < u_fftGridSize.y) {
         ivec2 outUV = ivec2(meshUV);
         imageStore(heightImage,        outUV, vec4(height, 0, 0, 0));
         imageStore(displacementXImage, outUV, vec4(dispX,  0, 0, 0));

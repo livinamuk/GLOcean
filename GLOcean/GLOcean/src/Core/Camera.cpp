@@ -16,13 +16,8 @@ namespace Camera {
 
     void Init(GLFWwindow* window) {
         g_window = window;
-        //gTransform.position = glm::vec3(0, -0.15f, 0);
-        //gTransform.rotation = glm::vec3(-0.25f, 0.0f, 0.0f);
-        //g_transform.position = glm::vec3(3.44, 0.55, 6.5);
-        //g_transform.rotation = glm::vec3(-0.12, 3.14f, 0.00);
-        g_transform.position = glm::vec3(18.0, 0.0, 8);
         g_transform.position = glm::vec3(0.0, 0.0, -2);
-        g_transform.rotation = glm::vec3(-0.40, 3.34, 0.00);
+        g_transform.rotation = glm::vec3(-0.03, 3.148, 0.00);
 
         double x, y;
         glfwGetCursorPos(g_window, &x, &y);
@@ -48,6 +43,8 @@ namespace Camera {
         glm::vec3 camForward = glm::vec3(g_transform.to_mat4()[2]);
         glm::vec3 movementForwardVector = glm::normalize(glm::vec3(camForward.x, 0, camForward.z));
 
+        //std::cout << g_transform.rotation.x << ", " << g_transform.rotation.y << "\n";
+
         // Speed factor
         float speedFactor = 1.0f;
         if (Input::KeyDown(GLFW_KEY_LEFT_SHIFT)) {
@@ -71,7 +68,7 @@ namespace Camera {
         g_transform.position += displacement;
 
         // View height
-        float heightSpeed = 3.0f;
+        float heightSpeed = 5.0f;
         if (Input::KeyDown(HELL_KEY_Q)) {
             g_transform.position.y += deltaTime * heightSpeed * speedFactor;
         }
