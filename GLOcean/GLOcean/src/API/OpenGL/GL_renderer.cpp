@@ -21,6 +21,7 @@
 
 #include "../Ocean/Ocean.h"
 #include <glm/gtx/rotate_vector.hpp>
+#include "Timer.hpp"
 
 namespace OpenGLRenderer {
 
@@ -119,11 +120,11 @@ namespace OpenGLRenderer {
 
         ComputeOceanFFT();
 
-        RenderLighting();
         RenderSkyBox();
+        RenderLighting();
         RenderHair();
-        RenderOcean();
         UnderwaterTest();
+        RenderOcean();
         RenderDebug();
 
         int width, height;
@@ -442,11 +443,17 @@ namespace OpenGLRenderer {
         g_fftGradZOutSSBO.PreAllocate(oceanSize.x * oceanSize.y * sizeof(std::complex<float>), dynamicFlags);
 
         // Precompute HO
-        std::vector<std::complex<float>> h0 = Ocean::ComputeH0();
+
+        glm::uvec2 gridSize = Ocean::GetFFTGridSize();
+        uint32_t seed = 1337;
+
+        std::vector<std::complex<float>> h0 = Ocean::ComputeH0(gridSize.x, seed);
         g_fftH0SSBO.copyFrom(h0.data(), sizeof(std::complex<float>) * h0.size());
     }
 
     void ComputeOceanFFT() {
+
+        //Timer("ComputeFTT");
 
         static double lastTime = glfwGetTime();
         double currentTime = glfwGetTime();
@@ -462,7 +469,7 @@ namespace OpenGLRenderer {
         const glm::uvec2 meshSize = Ocean::GetMeshSize();
         const glm::vec2 oceanLength = Ocean::GetOceanLength();
         const float gravity = Ocean::GetGravity();
-        const float displacementFactor = Ocean::GetDisplacementFactor();
+        //const float displacementFactor = Ocean::GetDisplacementFactor();
 
         const GLuint blocksPerSide = 16;
         const GLuint fftBlockSizeX = fftGridSize.x / blocksPerSide;
@@ -507,7 +514,9 @@ namespace OpenGLRenderer {
         g_shaders.oceanUpdateMesh.Use();
         g_shaders.oceanUpdateMesh.SetUvec2("u_fftGridSize", fftGridSize);
         g_shaders.oceanUpdateMesh.SetUvec2("u_meshSize", meshSize);
-        g_shaders.oceanUpdateMesh.SetFloat("u_dispFactor", displacementFactor);
+        g_shaders.oceanUpdateMesh.SetFloat("u_dispScale", Ocean::GetDisplacementScale());
+        g_shaders.oceanUpdateMesh.SetFloat("u_heightScale", Ocean::GetHeightScale());
+
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glFinish();
         glDispatchCompute(meshBlockSizeX, meshBlockSizeY, 1);
@@ -547,7 +556,7 @@ namespace OpenGLRenderer {
             swap = !swap;
         }
 
-        float scale = 8.0f / Ocean::GetFFTGridSize().x;
+        float scale = Ocean::GetModelMatrixScale();
 
         int min = -20;
         int max = 20;
@@ -618,7 +627,7 @@ namespace OpenGLRenderer {
         glPatchParameteri(GL_PATCH_VERTICES, 4);
         for (int x = min; x < max; x++) {
             for (int z = min; z < max; z++) {
-                tesseleationTransform.position = glm::vec3(patchOffset * x, -0.65f, patchOffset * z);
+                tesseleationTransform.position = glm::vec3(patchOffset * x, Ocean::GetOceanOriginY(), patchOffset* z);
                 if (swap) {
                     tesseleationTransform.position += glm::vec3(offset, 0.0f, 0.0f);
                 }
@@ -633,9 +642,16 @@ namespace OpenGLRenderer {
     }
 
     void RenderSkyBox() {
+
+        glDisable(GL_DEPTH_TEST);
+
         g_frameBuffers.main.Bind();
         g_frameBuffers.main.SetViewport();
-        g_frameBuffers.main.DrawBuffers({ "Color" });
+        g_frameBuffers.main.DrawBuffers({ "Color", "WorldPosition" });
+
+        Transform skyboxTransform;
+        skyboxTransform.position = Camera::GetViewPos();
+        skyboxTransform.scale = glm::vec3(100.0f);
 
         glm::mat4 projectionMatrix = Camera::GetProjectionMatrix();
         glm::mat4 viewMatrix = Camera::GetViewMatrix();
@@ -647,6 +663,9 @@ namespace OpenGLRenderer {
         g_shaders.skybox.SetInt("environmentMap", 0);
         g_shaders.skybox.SetMat4("view", viewMatrix);
         g_shaders.skybox.SetMat4("projection", projectionMatrix);
+        g_shaders.skybox.SetMat4("u_model", skyboxTransform.to_mat4());
+        g_shaders.skybox.SetVec3("u_viewPos", Camera::GetViewPos());
+        g_shaders.skybox.SetVec3("u_cameraForward", Camera::GetForward());
 
         glDepthFunc(GL_LEQUAL);
         glBindVertexArray(g_skybox.vao);
@@ -656,6 +675,9 @@ namespace OpenGLRenderer {
 
     void UnderwaterTest() {
         g_shaders.underwaterTest.Use();
+        g_shaders.underwaterTest.SetUvec2("u_fftGridSize", Ocean::GetFFTGridSize());
+        g_shaders.underwaterTest.SetFloat("u_oceanModelMatrixScale", Ocean::GetModelMatrixScale());
+        g_shaders.underwaterTest.SetFloat("u_oceanOriginY", Ocean::GetOceanOriginY());
 
         glBindImageTexture(0, g_frameBuffers.main.GetColorAttachmentHandleByName("Color"), 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
 
@@ -663,6 +685,10 @@ namespace OpenGLRenderer {
         glBindTexture(GL_TEXTURE_2D, g_frameBuffers.main.GetColorAttachmentHandleByName("WorldPosition"));
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft.GetColorAttachmentHandleByName("Height"));
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft.GetColorAttachmentHandleByName("DisplacementX"));
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft.GetColorAttachmentHandleByName("DisplacementZ"));
 
         glDispatchCompute((g_frameBuffers.main.GetWidth() + 7) / 8, (g_frameBuffers.main.GetHeight() + 7) / 8, 1);
     }

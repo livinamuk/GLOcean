@@ -5,6 +5,12 @@ layout(rgba8, binding = 0) uniform image2D outputImage;
 
 layout(binding = 0) uniform sampler2D WorldPositionTexture;
 layout(binding = 1) uniform sampler2D FFTHeightTexture;
+layout(binding = 2) uniform sampler2D DispXTexture;
+layout(binding = 3) uniform sampler2D DispZTexture;
+
+uniform uvec2 u_fftGridSize;
+uniform float u_oceanModelMatrixScale;
+uniform float u_oceanOriginY;
 
 void main() {
 	ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);   
@@ -25,28 +31,40 @@ void main() {
         return;
     }
 
-    const float scale = 0.0325;
-    const float waterOriginHeight = -0.65;
-    const vec2 oceanGridSize = vec2(128.0);
-    const vec2 patchWorldSize = oceanGridSize * scale;
-    vec2 ocean_uv = fract(worldPosition.xz / patchWorldSize);
-    float displacement_from_texture = texture(FFTHeightTexture, ocean_uv).r;
-    float waterHeight = (displacement_from_texture * scale) + waterOriginHeight;
+
+    const float gridCellsPerWorldUnit = 1.0 / u_oceanModelMatrixScale;
+    const vec2 fftGridSize = vec2(u_fftGridSize);
+    const vec2 patchWorldSize = fftGridSize * u_oceanModelMatrixScale;
+    
+    vec2 bestGuessUV = fract(worldPosition.xz / patchWorldSize);
+    
+    float dispX = texture(DispXTexture, bestGuessUV).r;
+    float dispZ = texture(DispZTexture, bestGuessUV).r;
+
+    vec2 estimatedDisplacement = vec2(dispX, dispZ) / gridCellsPerWorldUnit;
+    vec2 estimatedWorldPosition = worldPosition.xz - estimatedDisplacement;
+    vec2 estimatedUV = fract(estimatedWorldPosition / patchWorldSize);
+    
+    float height = texture(FFTHeightTexture, estimatedUV).r;
+    
+    float waterHeight = (height * u_oceanModelMatrixScale) + u_oceanOriginY;
     bool isUnderwater = worldPosition.y < waterHeight;
-
+    
     vec3 seaColor = vec3(0.286, 0.612, 0.576) * 0.05;
-
+    
     if (isUnderwater) {
         vec3 finalColor = mix(lighting.rgb * seaColor, lighting.rgb, 0.75);
-        //finalColor = vec3(1 ,0, 0);
+        finalColor = vec3(1 ,0, 0);
         //finalColor = lighting.rgb * seaColor;
         imageStore(outputImage, pixelCoords, vec4(finalColor, 1));
     }
-    
+
+
+
     // Foam line
-    float d = abs(worldPosition.y - waterHeight);
-    float edge = smoothstep(0.01, 0.0, d);
-    seaColor = vec3(1, 0, 0);
-    lighting.rgb = mix(lighting.rgb, seaColor, edge);
+    //float d = abs(worldPosition.y - waterHeight + 0.001);
+    //float edge = smoothstep(0.05, 0.0, d);
+    //seaColor = lighting.rgb + vec3(0.1);
+    //lighting.rgb = mix(lighting.rgb, seaColor, edge);
     //imageStore(outputImage, pixelCoords, vec4(lighting.rgb, 1));
 }

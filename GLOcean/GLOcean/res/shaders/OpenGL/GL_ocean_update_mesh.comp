@@ -34,17 +34,18 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 layout(r32f, binding = 0) uniform image2D heightImage;
 layout(r32f, binding = 1) uniform image2D displacementXImage;
 layout(r32f, binding = 2) uniform image2D displacementZImage;
-//layout(rgba32f, binding = 3) uniform image2D WorldPositionImage;
 layout(rgba32f, binding = 4) uniform image2D NormalsImage;
 
 uniform uvec2 u_fftGridSize;
 uniform uvec2 u_meshSize; 
-uniform float u_dispFactor;
 
 int wrapIndex(int value, int modulus) {
     int r = value % modulus;
     return r < 0 ? r + modulus : r;
 }
+
+uniform float u_dispScale;
+uniform float u_heightScale;
 
 void main() {
     uvec2 meshUV = gl_GlobalInvocationID.xy;
@@ -65,11 +66,11 @@ void main() {
     float checkerSign = ((relativeUV.x + relativeUV.y) & 1) != 0 ? 1.0 : -1.0;
 
     // Height
-    float height = checkerSign * h[fftIndex].r;
+    float height = checkerSign * h[fftIndex].r * u_heightScale;
 
     // Displacement
-    float dispX = u_dispFactor * checkerSign * dispX[fftIndex].r;
-    float dispZ = u_dispFactor * checkerSign * dispZ[fftIndex].r;
+    float dispX = -checkerSign * dispX[fftIndex].r * u_dispScale;
+    float dispZ = -checkerSign * dispZ[fftIndex].r * u_dispScale;
    
     float x = float(relativeUV.x) + dispX;
     float z = float(relativeUV.y) + dispZ;

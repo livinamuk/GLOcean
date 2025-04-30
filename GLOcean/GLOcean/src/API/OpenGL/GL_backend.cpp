@@ -88,13 +88,13 @@ namespace OpenGLBackend {
             g_currentWindowHeight = g_windowedHeight;
             glfwSetWindowMonitor(g_window, nullptr, 0, 0, g_windowedWidth, g_windowedHeight, g_mode->refreshRate);
             glfwSetWindowPos(g_window, 0, 0);
-            glfwSwapInterval(0);
+            //glfwSwapInterval(0);
         }
         else if (windowedMode == WindowedMode::FULLSCREEN) {
             g_currentWindowWidth = g_fullscreenWidth;
             g_currentWindowHeight = g_fullscreenHeight;
             glfwSetWindowMonitor(g_window, g_monitor, 0, 0, g_fullscreenWidth, g_fullscreenHeight, g_mode->refreshRate); 
-            glfwSwapInterval(1);
+            //glfwSwapInterval(1);
         }
         g_windowedMode = windowedMode;
     }

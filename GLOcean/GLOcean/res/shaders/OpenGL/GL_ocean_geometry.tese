@@ -34,7 +34,7 @@ void main() {
    
     float deltaX = texture(dispXTex, uv).r;
     float deltaZ = texture(dispZTex, uv).r;
-    float height = texture(heightTex, uv).r * 0.5;
+    float height = texture(heightTex, uv).r;;
 
     vec3 localPosition  = vec3(fftSpacePosition) + vec3(deltaX, height, deltaZ);
     

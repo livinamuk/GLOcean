@@ -28,15 +28,15 @@ uniform float u_roughness = 0.1;
 uniform float u_metallic = 0.0; // Should be 0.0 for water
 uniform float u_ao = 1.0;
 const vec3 u_F0_water = vec3(0.02); 
-uniform float u_fogStartDistance = 10.0;
-uniform float u_fogEndDistance = 100.0;
+uniform float u_fogStartDistance = 20.0;
+uniform float u_fogEndDistance = 50.0;
 uniform float u_fogExponent = 0.5;
 
 void main() {
 
     vec3 moonColor = vec3(1.0, 0.9, 0.9);
 
-    vec3 lightDir = normalize(vec3(-0.0, 0.25, 1));
+    vec3 lightDir = normalize(vec3(-0.0, 0.2, 1));
     vec3 L = normalize(lightDir);
     vec3 N = normalize(Normal);
     vec3 V = normalize(u_viewPos - WorldPos);
@@ -60,7 +60,7 @@ void main() {
     vec3 kD = (vec3(1.0) - kS);       // Diffuse reflection fraction
     kD *= (1.0 - metallic);           // Scale diffuse by non-metallic factor (has no effect here as metallic=0)
 
-    vec3 irradiance = moonColor * 0.0;
+    vec3 irradiance = moonColor * 0.05;
     vec3 diffuse_IBL = irradiance * albedo * ao;
 
     vec3 reflection_IBL    = texture(cubeMap, R).rgb;

@@ -12,19 +12,62 @@
 
 namespace Ocean {
 
+    struct FFTBand {        
+        glm::uvec2 fftResolution;   // Grid resolution for this band (number of FFT cells per side)
+        glm::vec2  patchSize;       // Physical size of one patch in world units (meters)
+        glm::vec2  cellSize;        // World space size of one grid cell = patchSize / fftResolution
+        glm::vec2  uvScale;         // UV scale to sample this bands texture maps        
+        uint32_t randomSeed;        // Seed for the random phases when building H0
+    };
+
+    FFTBand g_fftBands[2];
+
+
+    const float g_baseGridSize = 256.0f;
+
+    glm::uvec2 g_fftGridSize = glm::uvec2(g_baseGridSize, g_baseGridSize);
+
     const float g_spectrumScaleFactor = 0.45f;
-    const float g_meshSubdivisionFactor = 16.0f;         // This is the ratio of the mesh to the original FFT grid. 8.0 means g_FFTGridSize / 8
-    //glm::uvec2 g_oceanSize = glm::uvec2(128, 128);
-    glm::uvec2 g_fftGridSize = glm::uvec2(256, 256);
-    glm::vec2 g_oceanLength = glm::vec2(g_fftGridSize.x * g_spectrumScaleFactor, g_fftGridSize.y * g_spectrumScaleFactor);
+    glm::vec2 g_oceanLength = glm::vec2(g_baseGridSize * g_spectrumScaleFactor, g_baseGridSize * g_spectrumScaleFactor);
+    
+    const float g_oceanMeshToGridRatio = 8.0f;      // Ratio of original ocean mesh size to the FFT grid size; used to scale the model matrix
+    const float g_meshSubdivisionFactor = 16.0f;     // Number of mesh subdivisions per FFT grid cell; controls mesh density 
+    const float g_modelMatrixScale = g_oceanMeshToGridRatio / g_fftGridSize.x;
+    const float g_oceanOriginY = -0.65;
+
+
+    glm::vec2 g_patchSize = glm::vec2(g_fftGridSize.x * g_modelMatrixScale, g_fftGridSize.y * g_modelMatrixScale);
+
+
     glm::vec2 g_mWindDir = glm::normalize(glm::vec2(1.0f, 0.0f));
     float g_windSpeed = 75.0f;
     float g_gravity = 9.8f;
     float g_amplitude = 0.00001f;
     float g_crossWindDampingCoefficient = 1.0f;         // Controls the presence of waves perpendicular to the wind direction
     float g_smallWavesDampingCoefficient = 0.0000001f;  // controls the presence of waves of small wave longitude
-    float g_displacementFactor = -1.0f;                 // Controls the choppiness of the ocean waves
+
+    float g_dispScale = 1.0f;     // Controls the choppiness of the ocean waves
+    float g_heightScale = 0.5f;   // Controls the height of the ocean waves
+
     FFTSolver g_FFTSolver;
+
+    void Init() {
+        float cellScale = g_modelMatrixScale;
+        float gridSize = g_baseGridSize;
+
+        g_fftBands[0].fftResolution = glm::uvec2(gridSize, gridSize);
+        g_fftBands[0].patchSize = glm::vec2(g_fftBands[0].fftResolution) * cellScale;
+        g_fftBands[0].cellSize = g_fftBands[0].patchSize / glm::vec2(g_fftBands[0].fftResolution);
+        g_fftBands[0].uvScale = glm::vec2(1.0f) / g_fftBands[0].patchSize;
+        g_fftBands[0].randomSeed = 1337;
+
+        g_fftBands[1].fftResolution = glm::uvec2(gridSize / 2, gridSize / 2);
+        g_fftBands[1].patchSize = glm::vec2(g_fftBands[1].fftResolution) * cellScale;
+        g_fftBands[1].cellSize = g_fftBands[1].patchSize / glm::vec2(g_fftBands[1].fftResolution);
+        g_fftBands[1].uvScale = glm::vec2(1.0f) / g_fftBands[1].patchSize;
+        g_fftBands[1].randomSeed = 1338;
+
+    }
 
     void ComputeInverseFFT2D(unsigned int inputHandle, unsigned int outputHandle) {
         g_FFTSolver.fftInv2D(inputHandle, outputHandle, g_fftGridSize.x, g_fftGridSize.y);
@@ -57,9 +100,9 @@ namespace Ocean {
         g_smallWavesDampingCoefficient = smallWavesDampingCoefficient;
     }
 
-    void SetDisplacementFactor(float displacementFactor) {
-        g_displacementFactor = displacementFactor;
-    }
+    //void SetDisplacementFactor(float displacementFactor) {
+    //    g_displacementFactor = displacementFactor;
+    //}
 
     glm::vec2 KVector(int x, int z) {
         return glm::vec2((x - g_fftGridSize.x / 2.0f) * (2.0f * HELL_PI / g_oceanLength.x), (z - g_fftGridSize.y / 2.0f) * (2.0f * HELL_PI / g_oceanLength.y));
@@ -80,15 +123,14 @@ namespace Ocean {
         return phillips * expf(-lengthKSquared * L * L * g_smallWavesDampingCoefficient);
     }
 
-    std::vector<std::complex<float>> ComputeH0() {
-        uint32_t seed = 1337;
-        std::vector<std::complex<float>> h0(g_fftGridSize.x * g_fftGridSize.y);
+    std::vector<std::complex<float>> ComputeH0(size_t fftGridSize, uint32_t seed) {
+        std::vector<std::complex<float>> h0(fftGridSize * fftGridSize);
         std::mt19937 randomGen(seed);
         std::normal_distribution<float> normalDist(0.0f, 1.0f);
 
-        for (unsigned int z = 0; z < g_fftGridSize.y; ++z) {
-            for (unsigned int x = 0; x < g_fftGridSize.x; ++x) {
-                int idx = z * g_fftGridSize.x + x;
+        for (unsigned int z = 0; z < fftGridSize; ++z) {
+            for (unsigned int x = 0; x < fftGridSize; ++x) {
+                int idx = z * fftGridSize + x;
                 glm::vec2 k = KVector(x, z);
 
                 if (k == glm::vec2(0.0f)) {
@@ -101,9 +143,9 @@ namespace Ocean {
                     h0[idx] = { a, b };
 
                     // Enforce Hermitian symmetry for real, periodic heights
-                    int ix = (g_fftGridSize.x - x) % g_fftGridSize.x;
-                    int iz = (g_fftGridSize.y - z) % g_fftGridSize.y;
-                    h0[iz * g_fftGridSize.x + ix] = std::conj(h0[idx]);
+                    int ix = (fftGridSize - x) % fftGridSize;
+                    int iz = (fftGridSize - z) % fftGridSize;
+                    h0[iz * fftGridSize + ix] = std::conj(h0[idx]);
                 }
             }
         }
@@ -111,8 +153,12 @@ namespace Ocean {
         return h0;
     }
 
-    const float GetDisplacementFactor() {
-        return g_displacementFactor;
+    const float GetDisplacementScale() {
+        return g_dispScale;
+    }
+    
+    const float GetHeightScale() {
+        return g_heightScale;
     }
 
     const float GetMeshSubdivisionFactor() {
@@ -123,8 +169,16 @@ namespace Ocean {
         return g_gravity;
     }
 
+    const float GetOceanOriginY() {
+        return g_oceanOriginY;
+    }
+
     const glm::uvec2 GetFFTGridSize() {
         return g_fftGridSize;
+    }
+
+    const float GetModelMatrixScale() {
+        return g_modelMatrixScale;
     }
 
     const glm::uvec2 GetMeshSize() {

@@ -11,6 +11,7 @@
 #include "TextBlitting/Textblitter.h"
 #include "Tools/ImageTools.h"
 #include "HellTypes.h"
+#include "Timer.hpp"
 
 void Init(const std::string& title) {
     OpenGLBackend::Init(title);
@@ -53,8 +54,24 @@ void Render() {
     OpenGLRenderer::RenderFrame();
 }
 
+double perform_cpu_intensive_work(uint64_t outerIterations = 100, uint64_t innerIterations = 1000000) {
+    volatile double result = 0.0; // Use volatile to hint against over-optimization
+
+    for (uint64_t i = 0; i < outerIterations; ++i) {
+        for (uint64_t j = 0; j < innerIterations; ++j) {
+            // Perform some arbitrary math operations
+            result += std::sqrt(static_cast<double>(i * j + 1));
+            result = std::sin(result);
+            // Add more operations if needed
+        }
+    }
+    return result; // Return the dummy result
+}
+
 int main() {
     Init("GL Depth Peeling");
+    glfwSwapInterval(1);
+
     while (OpenGLBackend::WindowIsOpen()) {
         Update();
         Render();
