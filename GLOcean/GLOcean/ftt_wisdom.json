@@ -1,0 +1,188 @@
+{
+    "library": [
+        {
+            "scenario": {
+                "nx": 512,
+                "ny": 512,
+                "radix": 4,
+                "mode": 2,
+                "input_target": 0,
+                "output_target": 0
+            },
+            "type": {
+                "fp16": false,
+                "input_fp16": false,
+                "output_fp16": false,
+                "normalize": false
+            },
+            "performance": {
+                "shared_banked": false,
+                "vector_size": 2,
+                "workgroup_size_x": 128,
+                "workgroup_size_y": 2
+            },
+            "cost": 0.00006582469999999762
+        },
+        {
+            "scenario": {
+                "nx": 512,
+                "ny": 512,
+                "radix": 4,
+                "mode": 0,
+                "input_target": 0,
+                "output_target": 0
+            },
+            "type": {
+                "fp16": false,
+                "input_fp16": false,
+                "output_fp16": false,
+                "normalize": false
+            },
+            "performance": {
+                "shared_banked": false,
+                "vector_size": 2,
+                "workgroup_size_x": 32,
+                "workgroup_size_y": 1
+            },
+            "cost": 0.00006329469999999838
+        },
+        {
+            "scenario": {
+                "nx": 512,
+                "ny": 512,
+                "radix": 64,
+                "mode": 2,
+                "input_target": 0,
+                "output_target": 0
+            },
+            "type": {
+                "fp16": false,
+                "input_fp16": false,
+                "output_fp16": false,
+                "normalize": false
+            },
+            "performance": {
+                "shared_banked": true,
+                "vector_size": 2,
+                "workgroup_size_x": 16,
+                "workgroup_size_y": 8
+            },
+            "cost": 0.000020551100000004044
+        },
+        {
+            "scenario": {
+                "nx": 512,
+                "ny": 512,
+                "radix": 16,
+                "mode": 2,
+                "input_target": 0,
+                "output_target": 0
+            },
+            "type": {
+                "fp16": false,
+                "input_fp16": false,
+                "output_fp16": false,
+                "normalize": false
+            },
+            "performance": {
+                "shared_banked": true,
+                "vector_size": 2,
+                "workgroup_size_x": 16,
+                "workgroup_size_y": 8
+            },
+            "cost": 0.000019611900000001015
+        },
+        {
+            "scenario": {
+                "nx": 512,
+                "ny": 512,
+                "radix": 8,
+                "mode": 2,
+                "input_target": 0,
+                "output_target": 0
+            },
+            "type": {
+                "fp16": false,
+                "input_fp16": false,
+                "output_fp16": false,
+                "normalize": false
+            },
+            "performance": {
+                "shared_banked": false,
+                "vector_size": 2,
+                "workgroup_size_x": 16,
+                "workgroup_size_y": 8
+            },
+            "cost": 0.0000588506000000022
+        },
+        {
+            "scenario": {
+                "nx": 512,
+                "ny": 512,
+                "radix": 64,
+                "mode": 0,
+                "input_target": 0,
+                "output_target": 0
+            },
+            "type": {
+                "fp16": false,
+                "input_fp16": false,
+                "output_fp16": false,
+                "normalize": false
+            },
+            "performance": {
+                "shared_banked": true,
+                "vector_size": 2,
+                "workgroup_size_x": 64,
+                "workgroup_size_y": 1
+            },
+            "cost": 0.000021054299999999418
+        },
+        {
+            "scenario": {
+                "nx": 512,
+                "ny": 512,
+                "radix": 16,
+                "mode": 0,
+                "input_target": 0,
+                "output_target": 0
+            },
+            "type": {
+                "fp16": false,
+                "input_fp16": false,
+                "output_fp16": false,
+                "normalize": false
+            },
+            "performance": {
+                "shared_banked": true,
+                "vector_size": 2,
+                "workgroup_size_x": 4,
+                "workgroup_size_y": 8
+            },
+            "cost": 0.000019053300000001274
+        },
+        {
+            "scenario": {
+                "nx": 512,
+                "ny": 512,
+                "radix": 8,
+                "mode": 0,
+                "input_target": 0,
+                "output_target": 0
+            },
+            "type": {
+                "fp16": false,
+                "input_fp16": false,
+                "output_fp16": false,
+                "normalize": false
+            },
+            "performance": {
+                "shared_banked": false,
+                "vector_size": 2,
+                "workgroup_size_x": 64,
+                "workgroup_size_y": 2
+            },
+            "cost": 0.00002732979999999685
+        }
+    ]
+}

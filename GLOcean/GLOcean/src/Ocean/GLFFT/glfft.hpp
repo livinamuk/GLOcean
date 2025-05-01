@@ -19,6 +19,7 @@
 #ifndef GLFFT_HPP__
 #define GLFFT_HPP__
 
+#include "glfft_gl_api_headers.hpp"
 #include "glfft_interface.hpp"
 #include "glfft_common.hpp"
 #include "glfft_wisdom.hpp"
@@ -33,6 +34,7 @@
 
 namespace GLFFT
 {
+    inline bool go = false;
 
 class FFT
 {
@@ -89,7 +91,11 @@ class FFT
         /// @param input     Input buffer or texture.
         /// @param input_aux If using convolution transform type,
         ///                  the content of input and input_aux will be multiplied together.
-        void process(CommandBuffer *cmd, Resource *output, Resource *input, Resource *input_aux = nullptr);
+        void process(CommandBuffer* cmd, Resource* output, Resource* input, Resource* input_aux = nullptr);
+
+
+        //void process2(CommandBuffer* cmd, Resource* output, Resource* input, Resource* input_aux = nullptr);
+        //void process_ubo_only(CommandBuffer* cmd);
 
         /// @brief Run process() multiple times, timing the results.
         ///

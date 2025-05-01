@@ -29,14 +29,14 @@ uniform float u_metallic = 0.0; // Should be 0.0 for water
 uniform float u_ao = 1.0;
 const vec3 u_F0_water = vec3(0.02); 
 uniform float u_fogStartDistance = 20.0;
-uniform float u_fogEndDistance = 50.0;
+uniform float u_fogEndDistance = 150.0;
 uniform float u_fogExponent = 0.5;
 
 void main() {
 
     vec3 moonColor = vec3(1.0, 0.9, 0.9);
 
-    vec3 lightDir = normalize(vec3(-0.0, 0.2, 1));
+    vec3 lightDir = normalize(vec3(0.0, 0.2, 0.5));
     vec3 L = normalize(lightDir);
     vec3 N = normalize(Normal);
     vec3 V = normalize(u_viewPos - WorldPos);

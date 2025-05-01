@@ -23,6 +23,7 @@
 #include <sstream>
 #include <numeric>
 #include <assert.h>
+#include <iostream>
 
 #ifdef GLFFT_CLI_ASYNC
 #include "glfft_cli.hpp"
@@ -528,6 +529,7 @@ static inline unsigned type_to_input_components(Type type)
     }
 }
 
+
 FFT::FFT(Context *context, unsigned Nx, unsigned Ny,
         Type type, Direction direction, Target input_target, Target output_target,
         std::shared_ptr<ProgramCache> program_cache, const FFTOptions &options, const FFTWisdom &wisdom)
@@ -654,6 +656,15 @@ FFT::FFT(Context *context, unsigned Nx, unsigned Ny,
                 options.type.normalize,
             };
 
+            // This logs the parameters *as they were constructed*
+            std::cout << "[FFT Constructor Param Check]"
+                << " PassRadix=" << params.radix
+                << " PassMode=" << static_cast<int>(params.mode)
+                << " PassBanked=" << params.shared_banked
+                << " PassVec=" << params.vector_size
+                << " PassWG=(" << params.workgroup_size_x << "," << params.workgroup_size_y << ")"
+                << std::endl;
+    
             const Pass pass = {
                 params,
                 radix.num_workgroups_x, radix.num_workgroups_y,
@@ -661,6 +672,17 @@ FFT::FFT(Context *context, unsigned Nx, unsigned Ny,
                 next_pow2(radix.num_workgroups_x * params.workgroup_size_x),
                 get_program(params),
             };
+
+            std::cout << "[FFT Constructor Pass STORED]"
+                << " PassRadix=" << pass.parameters.radix
+                << " PassMode=" << static_cast<int>(pass.parameters.mode)
+                << " PassBanked=" << pass.parameters.shared_banked // Check this value
+                << " PassVec=" << pass.parameters.vector_size     // Check this value
+                << " PassWG=(" << pass.parameters.workgroup_size_x << "," << pass.parameters.workgroup_size_y << ")" // Check these values
+                //<< " ProgramHandle=" << (pass.program ? pass.program->get() : 0) // Log shader program handle
+                << std::endl;
+
+         
 
             passes.push_back(pass);
 
@@ -1048,6 +1070,8 @@ void FFT::process(CommandBuffer *cmd, Resource *output, Resource *input, Resourc
         float scale_x, scale_y;
     };
 
+    //std::cout << "passes.size(): " << passes.size() << "\n";
+
     for (auto &pass : passes)
     {
         if (pass.program != current_program)
@@ -1083,17 +1107,22 @@ void FFT::process(CommandBuffer *cmd, Resource *output, Resource *input, Resourc
         {
             if (buffers[0] == input && ssbo.input.size != 0)
             {
-                cmd->bind_storage_buffer_range(BindingSSBOIn,
-                        ssbo.input.offset, ssbo.input.size, static_cast<Buffer*>(buffers[0]));
+                
+                    cmd->bind_storage_buffer_range(BindingSSBOIn,
+                                                   ssbo.input.offset, ssbo.input.size, static_cast<Buffer*>(buffers[0]));
+               
             }
             else if (buffers[0] == output && ssbo.output.size != 0)
             {
-                cmd->bind_storage_buffer_range(BindingSSBOIn,
-                        ssbo.output.offset, ssbo.output.size, static_cast<Buffer*>(buffers[0]));
+                
+                    cmd->bind_storage_buffer_range(BindingSSBOIn,
+                                                   ssbo.output.offset, ssbo.output.size, static_cast<Buffer*>(buffers[0]));
+               
             }
             else
             {
-                cmd->bind_storage_buffer(BindingSSBOIn, static_cast<Buffer*>(buffers[0]));
+                    cmd->bind_storage_buffer(BindingSSBOIn, static_cast<Buffer*>(buffers[0]));
+               
             }
         }
 
@@ -1139,10 +1168,28 @@ void FFT::process(CommandBuffer *cmd, Resource *output, Resource *input, Resourc
                 cmd->bind_storage_buffer(BindingSSBOOut, static_cast<Buffer*>(buffers[1]));
             }
         }
+        
+        uint32_t p;
+        uint32_t stride;
+        uint32_t padding[2];
+        float offset_x, offset_y;
+        float scale_x, scale_y;
 
+        //std::cout << "push_constant_data()\n";
+        //std::cout << " - constant_data.p:           " << constant_data.p << "\n";
+        //std::cout << " - constant_data.stride:      " << constant_data.stride << "\n";
+        //std::cout << " - constant_data.padding[0]:  " << constant_data.padding[0] << "\n";
+        //std::cout << " - constant_data.padding[1]:  " << constant_data.padding[1] << "\n";
+        //std::cout << " - constant_data.offset_x:    " << constant_data.offset_x << "\n";
+        //std::cout << " - constant_data.offset_x:    " << constant_data.offset_y << "\n";
+        //std::cout << " - constant_data.scale_x:     " << constant_data.scale_x << "\n";
+        //std::cout << " - constant_data.scale_y:     " << constant_data.scale_y << "\n\n";
+        
         cmd->push_constant_data(BindingUBO, &constant_data, sizeof(constant_data));
+        
         cmd->dispatch(pass.workgroups_x, pass.workgroups_y, 1);
        
+
         // For last pass, we don't know how our resource will be used afterwards,
         // so let barrier decisions be up to the API user.
         if (pass_index + 1 < passes.size())
@@ -1156,9 +1203,24 @@ void FFT::process(CommandBuffer *cmd, Resource *output, Resource *input, Resourc
                 temp_buffer.get() :
                 (passes.back().parameters.output_target != SSBO ? temp_buffer_image.get() : output);
         }
-
         swap(buffers[0], buffers[1]);
         pass_index++;
     }
 }
 
+
+//void FFT::process2(CommandBuffer* cmd, Resource* output, Resource* input, Resource* input_aux) {
+//    struct FFTConstantData {};
+//    FFTConstantData constant_data;
+//    cmd->push_constant_data(BindingUBO, &constant_data, sizeof(constant_data));   
+//    //static int count = 0;
+//    //std::cout << "process2() " << count++ << "\n";
+//}
+//
+//void FFT::process_ubo_only(CommandBuffer* cmd) {
+//    struct FFTConstantData {}; // Data content doesn't seem to matter
+//    for (auto& pass : passes) {
+//        FFTConstantData constant_data;
+//        cmd->push_constant_data(BindingUBO, &constant_data, sizeof(constant_data));
+//    }
+//}

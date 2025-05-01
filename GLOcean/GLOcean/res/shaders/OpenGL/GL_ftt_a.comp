@@ -1,0 +1,1662 @@
+/////////////////////////////// Source file 0/////////////////////////////
+#version 430 core
+
+/////////////////////////////// Source file 1/////////////////////////////
+#define FFT_P1
+#define FFT_SHARED_BANKED 1
+#define FFT_INVERSE
+#define FFT_RADIX 64
+#define FFT_VERT
+#define FFT_VEC2
+layout(local_size_x = 16, local_size_y = 1, local_size_z = 8) in;
+/* Copyright (C) 2015 Hans-Kristian Arntzen <maister@archlinux.us>
+ *
+ * Permission is hereby granted, free of charge,
+ * to any person obtaining a copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+ * and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+#if defined(FFT_FP16) && defined(GL_ES)
+precision mediump float;
+#endif
+
+#define BINDING_SSBO_IN 0
+#define BINDING_SSBO_OUT 1
+#define BINDING_SSBO_AUX 2
+#define BINDING_UBO 3
+#define BINDING_TEXTURE0 4
+#define BINDING_TEXTURE1 5
+#define BINDING_IMAGE 6
+
+layout(std140, binding = BINDING_UBO) uniform UBO
+{
+    uvec4 p_stride_padding;
+    vec4 texture_offset_scale;
+} constant_data;
+#define uStride constant_data.p_stride_padding.y
+
+// cfloat is the "generic" type used to hold complex data.
+// GLFFT supports vec2, vec4 and "vec8" for its complex data
+// to be able to work on 1, 2 and 4 complex values in a single vector.
+// FFT_VEC2, FFT_VEC4, FFT_VEC8 defines which type we're using.
+// The shaders are compiled on-demand.
+
+// FP16 values are packed as 2xfp16 in a uint.
+// packHalf2x16 and unpackHalf2x16 are used to bitcast between these formats.
+
+// The complex number format is (real, imag, real, imag, ...) in an interleaved fashion.
+// For complex-to-real or real-to-complex transforms, we consider two adjacent real samples to be a complex number as-is.
+// Separate "resolve" passes are added to make the transform correct.
+
+#if defined(FFT_VEC2)
+#define cfloat vec2
+#define cfloat_buffer_fp16 uint
+#elif defined(FFT_VEC4)
+#define cfloat vec4
+#define cfloat_buffer_fp16 uvec2
+#elif defined(FFT_VEC8)
+#if !defined(FFT_INPUT_FP16) || !defined(FFT_OUTPUT_FP16) || !defined(FFT_FP16)
+#error FFT_VEC8 must use FP16 everywhere.
+#endif
+#define cfloat uvec4
+#define cfloat_buffer_fp16 uvec4
+#else
+#error FFT_VEC2, FFT_VEC4 or FFT_VEC8 must be defined.
+#endif
+
+#ifdef FFT_INPUT_FP16
+#define cfloat_buffer_in cfloat_buffer_fp16
+#else
+#define cfloat_buffer_in cfloat
+#endif
+
+#ifdef FFT_OUTPUT_FP16
+#define cfloat_buffer_out cfloat_buffer_fp16
+#else
+#define cfloat_buffer_out cfloat
+#endif
+
+// Normally this would be sqrt(1 / radix), but we'd have to apply normalization
+// for every pass instead of just half of them. Also, 1 / 2^n is "lossless" in FP math.
+#ifdef FFT_NORMALIZE
+#define FFT_NORM_FACTOR (1.0 / float(FFT_RADIX))
+#endif
+
+// FFT_CVECTOR_SIZE defines an interleaving stride for the first pass.
+// The first FFT pass with stockham autosort needs to do some shuffling around if we're processing
+// more than one complex value per vector.
+// This is only needed for horizontal transforms since we vectorize horizontally and different elements
+// in the vector are from different transforms when we do vertical transforms.
+
+#if defined(FFT_P1) && !defined(FFT_DUAL) && defined(FFT_HORIZ) && defined(FFT_VEC8)
+#define FFT_CVECTOR_SIZE 4
+#elif defined(FFT_P1) && ((!defined(FFT_DUAL) && defined(FFT_HORIZ) && defined(FFT_VEC4)) || (defined(FFT_DUAL) && defined(FFT_HORIZ) && defined(FFT_VEC8)))
+#define FFT_CVECTOR_SIZE 2
+#else
+#define FFT_CVECTOR_SIZE 1
+#endif
+
+#ifdef GL_ES
+#define FFT_HIGHP highp
+#else
+#define FFT_HIGHP
+#endif
+
+#ifdef FFT_VEC8
+
+// Currently unlikely to be useful.
+uvec4 PADD(uvec4 a, uvec4 b)
+{
+    return uvec4(
+        packHalf2x16(unpackHalf2x16(a.x) + unpackHalf2x16(b.x)),
+        packHalf2x16(unpackHalf2x16(a.y) + unpackHalf2x16(b.y)),
+        packHalf2x16(unpackHalf2x16(a.z) + unpackHalf2x16(b.z)),
+        packHalf2x16(unpackHalf2x16(a.w) + unpackHalf2x16(b.w)));
+}
+
+uvec4 PSUB(uvec4 a, uvec4 b)
+{
+    return uvec4(
+        packHalf2x16(unpackHalf2x16(a.x) - unpackHalf2x16(b.x)),
+        packHalf2x16(unpackHalf2x16(a.y) - unpackHalf2x16(b.y)),
+        packHalf2x16(unpackHalf2x16(a.z) - unpackHalf2x16(b.z)),
+        packHalf2x16(unpackHalf2x16(a.w) - unpackHalf2x16(b.w)));
+}
+
+uvec4 PMUL(uvec4 a, uvec4 b)
+{
+    return uvec4(
+        packHalf2x16(unpackHalf2x16(a.x) * unpackHalf2x16(b.x)),
+        packHalf2x16(unpackHalf2x16(a.y) * unpackHalf2x16(b.y)),
+        packHalf2x16(unpackHalf2x16(a.z) * unpackHalf2x16(b.z)),
+        packHalf2x16(unpackHalf2x16(a.w) * unpackHalf2x16(b.w)));
+}
+
+uvec4 CONJ_SWIZZLE(uvec4 v)
+{
+    return uvec4(
+        packHalf2x16(unpackHalf2x16(v.x).yx),
+        packHalf2x16(unpackHalf2x16(v.y).yx),
+        packHalf2x16(unpackHalf2x16(v.z).yx),
+        packHalf2x16(unpackHalf2x16(v.w).yx));
+}
+
+uvec4 LDUP_SWIZZLE(uvec4 v)
+{
+    return uvec4(
+        packHalf2x16(unpackHalf2x16(v.x).xx),
+        packHalf2x16(unpackHalf2x16(v.y).xx),
+        packHalf2x16(unpackHalf2x16(v.z).xx),
+        packHalf2x16(unpackHalf2x16(v.w).xx));
+}
+
+uvec4 HDUP_SWIZZLE(uvec4 v)
+{
+    return uvec4(
+        packHalf2x16(unpackHalf2x16(v.x).yy),
+        packHalf2x16(unpackHalf2x16(v.y).yy),
+        packHalf2x16(unpackHalf2x16(v.z).yy),
+        packHalf2x16(unpackHalf2x16(v.w).yy));
+}
+
+// Sign-flip. Works for the cases we're interested in.
+uvec4 cmul_minus_j(uvec4 v)
+{
+    return uvec4(0x80000000u) ^ CONJ_SWIZZLE(v);
+}
+
+uvec4 cmul_plus_j(uvec4 v)
+{
+    return uvec4(0x00008000u) ^ CONJ_SWIZZLE(v);
+}
+
+uvec4 cmul(uvec4 a, uvec4 b)
+{
+    uvec4 r3 = CONJ_SWIZZLE(a);
+    uvec4 r1 = LDUP_SWIZZLE(b);
+    uvec4 R0 = PMUL(a, r1);
+    uvec4 r2 = HDUP_SWIZZLE(b);
+    uvec4 R1 = PMUL(r2, r3);
+    return PADD(R0, uvec4(0x8000u) ^ R1);
+}
+
+void butterfly(inout uvec4 a, inout uvec4 b, uvec4 w)
+{
+    uvec4 t = cmul(b, w);
+    b = PSUB(a, t);
+    a = PADD(a, t);
+}
+
+void butterfly(inout uvec4 a, inout uvec4 b, vec4 w)
+{
+    uvec4 t = cmul(b, uvec2(packHalf2x16(w.xy), packHalf2x16(w.zw)).xxyy);
+    b = PSUB(a, t);
+    a = PADD(a, t);
+}
+
+void butterfly(inout uvec4 a, inout uvec4 b, vec2 w)
+{
+    uvec4 t = cmul(b, uvec4(packHalf2x16(w)));
+    b = PSUB(a, t);
+    a = PADD(a, t);
+}
+
+void butterfly_p1(inout uvec4 a, inout uvec4 b)
+{
+    uvec4 t = b;
+    b = PSUB(a, t);
+    a = PADD(a, t);
+}
+
+void butterfly_p1_minus_j(inout uvec4 a, inout uvec4 b)
+{
+    uvec4 t = b;
+    b = uvec4(0x80000000u) ^ (PSUB(CONJ_SWIZZLE(a), CONJ_SWIZZLE(t)));
+    a = PADD(a, t);
+}
+
+void butterfly_p1_plus_j(inout uvec4 a, inout uvec4 b)
+{
+    uvec4 t = b;
+    b = uvec4(0x00008000u) ^ (PSUB(CONJ_SWIZZLE(a), CONJ_SWIZZLE(t)));
+    a = PADD(a, t);
+}
+#endif
+
+// Complex multiply.
+vec4 cmul(vec4 a, vec4 b)
+{
+    vec4 r3 = a.yxwz;
+    vec4 r1 = b.xxzz;
+    vec4 R0 = a * r1;
+    vec4 r2 = b.yyww;
+    vec4 R1 = r2 * r3;
+    return R0 + vec4(-R1.x, R1.y, -R1.z, R1.w);
+}
+
+vec2 cmul(vec2 a, vec2 b)
+{
+    vec2 r3 = a.yx;
+    vec2 r1 = b.xx;
+    vec2 R0 = a * r1;
+    vec2 r2 = b.yy;
+    vec2 R1 = r2 * r3;
+    return R0 + vec2(-R1.x, R1.y);
+}
+
+#ifdef FFT_INPUT_TEXTURE
+
+#ifndef FFT_P1
+#error Input texture can only be used when P == 1.
+#endif
+
+#ifdef GL_ES
+#if defined(FFT_INPUT_FP16) || defined(FFT_FP16)
+precision mediump sampler2D;
+#else
+precision highp sampler2D;
+#endif
+#endif
+
+#define uTexelOffset constant_data.texture_offset_scale.xy
+#define uTexelScale constant_data.texture_offset_scale.zw
+
+layout(binding = BINDING_TEXTURE0) uniform sampler2D uTexture;
+#ifdef FFT_CONVOLVE
+layout(binding = BINDING_TEXTURE1) uniform sampler2D uTexture2;
+#endif
+
+cfloat load_texture(sampler2D sampler, uvec2 coord)
+{
+    FFT_HIGHP vec2 uv = vec2(coord) * uTexelScale + uTexelOffset;
+
+    // Quite messy, this :)
+#if defined(FFT_VEC8)
+    #if defined(FFT_INPUT_REAL)
+    return uvec4(
+        packHalf2x16(vec2(textureLodOffset(sampler, uv, 0.0, ivec2(0, 0)).x, textureLodOffset(sampler, uv, 0.0, ivec2(1, 0)).x)),
+        packHalf2x16(vec2(textureLodOffset(sampler, uv, 0.0, ivec2(2, 0)).x, textureLodOffset(sampler, uv, 0.0, ivec2(3, 0)).x)),
+        packHalf2x16(vec2(textureLodOffset(sampler, uv, 0.0, ivec2(4, 0)).x, textureLodOffset(sampler, uv, 0.0, ivec2(5, 0)).x)),
+        packHalf2x16(vec2(textureLodOffset(sampler, uv, 0.0, ivec2(6, 0)).x, textureLodOffset(sampler, uv, 0.0, ivec2(7, 0)).x)));
+    #elif defined(FFT_DUAL)
+    vec4 c0 = textureLodOffset(sampler, uv, 0.0, ivec2(0, 0));
+    vec4 c1 = textureLodOffset(sampler, uv, 0.0, ivec2(1, 0));
+    return uvec4(packHalf2x16(c0.xy), packHalf2x16(c0.zw), packHalf2x16(c1.xy), packHalf2x16(c1.zw));
+    #else
+    return uvec4(
+        packHalf2x16(textureLodOffset(sampler, uv, 0.0, ivec2(0, 0)).xy),
+        packHalf2x16(textureLodOffset(sampler, uv, 0.0, ivec2(1, 0)).xy),
+        packHalf2x16(textureLodOffset(sampler, uv, 0.0, ivec2(2, 0)).xy),
+        packHalf2x16(textureLodOffset(sampler, uv, 0.0, ivec2(3, 0)).xy));
+    #endif
+#elif defined(FFT_VEC4)
+    #if defined(FFT_INPUT_REAL)
+    return vec4(
+        textureLodOffset(sampler, uv, 0.0, ivec2(0, 0)).x,
+        textureLodOffset(sampler, uv, 0.0, ivec2(1, 0)).x,
+        textureLodOffset(sampler, uv, 0.0, ivec2(2, 0)).x,
+        textureLodOffset(sampler, uv, 0.0, ivec2(3, 0)).x);
+    #elif defined(FFT_DUAL)
+    return textureLod(sampler, uv, 0.0);
+    #else
+    return vec4(
+        textureLodOffset(sampler, uv, 0.0, ivec2(0, 0)).xy,
+        textureLodOffset(sampler, uv, 0.0, ivec2(1, 0)).xy);
+    #endif
+#elif defined(FFT_VEC2)
+    #if defined(FFT_INPUT_REAL)
+    return vec2(
+        textureLodOffset(sampler, uv, 0.0, ivec2(0, 0)).x,
+        textureLodOffset(sampler, uv, 0.0, ivec2(1, 0)).x);
+    #else
+    return textureLod(sampler, uv, 0.0).xy;
+    #endif
+#endif
+}
+
+cfloat load_texture(uvec2 coord)
+{
+#ifdef FFT_CONVOLVE
+    // Convolution in frequency domain is multiplication.
+    cfloat c0 = load_texture(uTexture, coord);
+    cfloat c1 = load_texture(uTexture2, coord);
+    return cmul(c0, c1);
+#else
+    return load_texture(uTexture, coord);
+#endif
+}
+
+// Implement a dummy load_global, or we have to #ifdef out lots of dead code elsewhere.
+#ifdef FFT_VEC8
+cfloat load_global(uint offset)
+{
+    return cfloat(0u);
+}
+#else
+cfloat load_global(uint offset)
+{
+    return cfloat(0.0);
+}
+#endif
+
+#else
+
+layout(std430, binding = BINDING_SSBO_IN) readonly buffer Block
+{
+    cfloat_buffer_in data[];
+} fft_in;
+
+#ifdef FFT_CONVOLVE
+layout(std430, binding = BINDING_SSBO_AUX) readonly buffer Block2
+{
+    cfloat_buffer_in data[];
+} fft_in2;
+
+cfloat load_global(uint offset)
+{
+    // Convolution in frequency domain is multiplication.
+#if defined(FFT_INPUT_FP16) && defined(FFT_VEC2)
+    return cmul(unpackHalf2x16(fft_in.data[offset]), unpackHalf2x16(fft_in2.data[offset]));
+#elif defined(FFT_INPUT_FP16) && defined(FFT_VEC4)
+    uvec2 data = fft_in.data[offset];
+    uvec2 data2 = fft_in2.data[offset];
+    return cmul(vec4(unpackHalf2x16(data.x), unpackHalf2x16(data.y)), vec4(unpackHalf2x16(data2.x), unpackHalf2x16(data2.y)));
+#else
+    return cmul(fft_in.data[offset], fft_in2.data[offset]);
+#endif
+}
+#else
+cfloat load_global(uint offset)
+{
+#if defined(FFT_INPUT_FP16) && defined(FFT_VEC2)
+    return unpackHalf2x16(fft_in.data[offset]);
+#elif defined(FFT_INPUT_FP16) && defined(FFT_VEC4)
+    uvec2 data = fft_in.data[offset];
+    return vec4(unpackHalf2x16(data.x), unpackHalf2x16(data.y));
+#else
+    return fft_in.data[offset];
+#endif
+}
+#endif
+#endif
+
+#ifndef FFT_OUTPUT_IMAGE
+layout(std430, binding = BINDING_SSBO_OUT) writeonly buffer BlockOut
+{
+    cfloat_buffer_out data[];
+} fft_out;
+
+void store_global(uint offset, cfloat v)
+{
+#ifdef FFT_NORM_FACTOR
+#ifdef FFT_VEC8
+    v = PMUL(uvec4(packHalf2x16(vec2(FFT_NORM_FACTOR))), v);
+#else
+    v *= FFT_NORM_FACTOR;
+#endif
+#endif
+
+#if defined(FFT_OUTPUT_FP16) && defined(FFT_VEC2)
+    fft_out.data[offset] = packHalf2x16(v);
+#elif defined(FFT_OUTPUT_FP16) && defined(FFT_VEC4)
+    fft_out.data[offset] = uvec2(packHalf2x16(v.xy), packHalf2x16(v.zw));
+#else
+    fft_out.data[offset] = v;
+#endif
+}
+#endif
+
+#ifdef FFT_OUTPUT_IMAGE
+
+#ifdef GL_ES
+#ifdef FFT_OUTPUT_REAL
+precision highp image2D;
+#else
+precision mediump image2D;
+#endif
+precision highp uimage2D;
+#endif
+
+//#ifdef FFT_P1
+//#error FFT_OUTPUT_IMAGE is not supported in first pass.
+//#endif
+
+// Currently, GLFFT only supports outputing to "fixed" formats like these.
+// Should be possible to add options for this to at least choose between FP16/FP32 output,
+// and maybe rgba8_unorm for FFT_DUAL case.
+#if defined(FFT_DUAL)
+layout(rgba16f, binding = BINDING_IMAGE) uniform writeonly image2D uImage;
+#elif defined(FFT_OUTPUT_REAL)
+layout(r32f, binding = BINDING_IMAGE) uniform writeonly image2D uImage;
+#else
+// GLES 3.1 doesn't support rg16f layout for some reason, so work around it ...
+layout(r32ui, binding = BINDING_IMAGE) uniform writeonly uimage2D uImage;
+#endif
+
+void store(ivec2 coord, vec4 value)
+{
+#ifdef FFT_NORM_FACTOR
+    value *= FFT_NORM_FACTOR;
+#endif
+
+#if defined(FFT_DUAL)
+    imageStore(uImage, coord, value);
+#elif defined(FFT_HORIZ)
+#ifdef FFT_OUTPUT_REAL
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(0, 0), value.xxxx);
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(1, 0), value.yyyy);
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(2, 0), value.zzzz);
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(3, 0), value.wwww);
+#else
+    imageStore(uImage, coord + ivec2(0, 0), uvec4(packHalf2x16(value.xy)));
+    imageStore(uImage, coord + ivec2(1, 0), uvec4(packHalf2x16(value.zw)));
+#endif
+#elif defined(FFT_VERT)
+#ifdef FFT_OUTPUT_REAL
+    imageStore(uImage, coord * ivec2(4, 1) + ivec2(0, 0), value.xxxx);
+    imageStore(uImage, coord * ivec2(4, 1) + ivec2(1, 0), value.yyyy);
+    imageStore(uImage, coord * ivec2(4, 1) + ivec2(2, 0), value.zzzz);
+    imageStore(uImage, coord * ivec2(4, 1) + ivec2(3, 0), value.wwww);
+#else
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(0, 0), uvec4(packHalf2x16(value.xy)));
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(1, 0), uvec4(packHalf2x16(value.zw)));
+#endif
+#else
+#error Inconsistent defines.
+#endif
+}
+
+#ifndef FFT_DUAL
+void store(ivec2 coord, vec2 value)
+{
+#ifdef FFT_NORM_FACTOR
+    value *= FFT_NORM_FACTOR;
+#endif
+
+#if defined(FFT_HORIZ)
+#ifdef FFT_OUTPUT_REAL
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(0, 0), value.xxxx);
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(1, 0), value.yyyy);
+#else
+    imageStore(uImage, coord, uvec4(packHalf2x16(value.xy)));
+#endif
+#elif defined(FFT_VERT)
+#ifdef FFT_OUTPUT_REAL
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(0, 0), value.xxxx);
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(1, 0), value.yyyy);
+#else
+    imageStore(uImage, coord, uvec4(packHalf2x16(value.xy)));
+#endif
+#else
+#error Inconsistent defines.
+#endif
+}
+#endif
+
+#ifdef FFT_VEC8
+void store(ivec2 coord, uvec4 value)
+{
+#ifdef FFT_NORM_FACTOR
+    value = PMUL(value, uvec4(packHalf2x16(vec2(FFT_NORM_FACTOR))));
+#endif
+
+#if defined(FFT_DUAL)
+#if defined(FFT_HORIZ)
+    imageStore(uImage, coord + ivec2(0, 0), vec4(unpackHalf2x16(value.x), unpackHalf2x16(value.y)));
+    imageStore(uImage, coord + ivec2(1, 0), vec4(unpackHalf2x16(value.z), unpackHalf2x16(value.w)));
+#else
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(0, 0), vec4(unpackHalf2x16(value.x), unpackHalf2x16(value.y)));
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(1, 0), vec4(unpackHalf2x16(value.z), unpackHalf2x16(value.w)));
+#endif
+#elif defined(FFT_HORIZ)
+#ifdef FFT_OUTPUT_REAL
+    vec2 value0 = unpackHalf2x16(value.x);
+    vec2 value1 = unpackHalf2x16(value.y);
+    vec2 value2 = unpackHalf2x16(value.z);
+    vec2 value3 = unpackHalf2x16(value.w);
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(0, 0), value0.xxxx);
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(1, 0), value0.yyyy);
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(2, 0), value1.xxxx);
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(3, 0), value1.yyyy);
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(4, 0), value2.xxxx);
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(5, 0), value2.yyyy);
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(6, 0), value3.xxxx);
+    imageStore(uImage, coord * ivec2(2, 1) + ivec2(7, 0), value3.yyyy);
+#else
+    imageStore(uImage, coord + ivec2(0, 0), value.xxxx);
+    imageStore(uImage, coord + ivec2(1, 0), value.yyyy);
+    imageStore(uImage, coord + ivec2(2, 0), value.zzzz);
+    imageStore(uImage, coord + ivec2(3, 0), value.wwww);
+#endif
+#elif defined(FFT_VERT)
+#ifdef FFT_OUTPUT_REAL
+    vec2 value0 = unpackHalf2x16(value.x);
+    vec2 value1 = unpackHalf2x16(value.y);
+    vec2 value2 = unpackHalf2x16(value.z);
+    vec2 value3 = unpackHalf2x16(value.w);
+    imageStore(uImage, coord * ivec2(8, 1) + ivec2(0, 0), value0.xxxx);
+    imageStore(uImage, coord * ivec2(8, 1) + ivec2(1, 0), value0.yyyy);
+    imageStore(uImage, coord * ivec2(8, 1) + ivec2(2, 0), value1.xxxx);
+    imageStore(uImage, coord * ivec2(8, 1) + ivec2(3, 0), value1.yyyy);
+    imageStore(uImage, coord * ivec2(8, 1) + ivec2(4, 0), value2.xxxx);
+    imageStore(uImage, coord * ivec2(8, 1) + ivec2(5, 0), value2.yyyy);
+    imageStore(uImage, coord * ivec2(8, 1) + ivec2(6, 0), value3.xxxx);
+    imageStore(uImage, coord * ivec2(8, 1) + ivec2(7, 0), value3.yyyy);
+#else
+    imageStore(uImage, coord * ivec2(4, 1) + ivec2(0, 0), value.xxxx);
+    imageStore(uImage, coord * ivec2(4, 1) + ivec2(1, 0), value.yyyy);
+    imageStore(uImage, coord * ivec2(4, 1) + ivec2(2, 0), value.zzzz);
+    imageStore(uImage, coord * ivec2(4, 1) + ivec2(3, 0), value.wwww);
+#endif
+#else
+#error Inconsistent defines.
+#endif
+}
+#endif
+
+#endif
+
+#define PI 3.14159265359
+#define SQRT_1_2 0.70710678118
+
+#ifdef FFT_INVERSE
+#define PI_DIR (+PI)
+#else
+#define PI_DIR (-PI)
+#endif
+
+// Some GLES implementations have lower trancendental precision than desired which
+// significantly affects the overall FFT precision.
+// For these implementations it might make sense to add a LUT UBO with twiddle factors,
+// which can be used here.
+
+// 4-component FP16 twiddles, pack in uvec4.
+#if !defined(FFT_DUAL) && defined(FFT_HORIZ) && defined(FFT_VEC8)
+#define FFT_OUTPUT_STEP 4u
+#define FFT_OUTPUT_SHIFT 2u
+#define ctwiddle uvec4
+ctwiddle twiddle(uint k, uint p)
+{
+    // Trancendentals should always be done in highp.
+    FFT_HIGHP vec4 angles = PI_DIR * (float(k) + vec4(0.0, 1.0, 2.0, 3.0)) / float(p);
+    FFT_HIGHP vec4 cos_a = cos(angles);
+    FFT_HIGHP vec4 sin_a = sin(angles);
+    return ctwiddle(
+            packHalf2x16(vec2(cos_a.x, sin_a.x)),
+            packHalf2x16(vec2(cos_a.y, sin_a.y)),
+            packHalf2x16(vec2(cos_a.z, sin_a.z)),
+            packHalf2x16(vec2(cos_a.w, sin_a.w)));
+}
+
+#ifdef FFT_INVERSE
+#define TWIDDLE_1_8 (uvec4(packHalf2x16(vec2(+SQRT_1_2, +SQRT_1_2))))
+#define TWIDDLE_3_8 (uvec4(packHalf2x16(vec2(-SQRT_1_2, +SQRT_1_2))))
+#else
+#define TWIDDLE_1_8 (uvec4(packHalf2x16(vec2(+SQRT_1_2, -SQRT_1_2))))
+#define TWIDDLE_3_8 (uvec4(packHalf2x16(vec2(-SQRT_1_2, -SQRT_1_2))))
+#endif
+
+// 2-component twiddles, pack in vec4.
+#elif (!defined(FFT_DUAL) && defined(FFT_HORIZ) && defined(FFT_VEC4)) || (defined(FFT_DUAL) && defined(FFT_HORIZ) && defined(FFT_VEC8))
+#define FFT_OUTPUT_STEP 2u
+#define FFT_OUTPUT_SHIFT 1u
+#define ctwiddle vec4
+ctwiddle twiddle(uint k, uint p)
+{
+    // Trancendentals should always be done in highp.
+    FFT_HIGHP vec2 angles = PI_DIR * (float(k) + vec2(0.0, 1.0)) / float(p);
+    FFT_HIGHP vec2 cos_a = cos(angles);
+    FFT_HIGHP vec2 sin_a = sin(angles);
+    return ctwiddle(cos_a.x, sin_a.x, cos_a.y, sin_a.y);
+}
+
+#ifdef FFT_INVERSE
+#define TWIDDLE_1_8 (vec2(+SQRT_1_2, +SQRT_1_2).xyxy)
+#define TWIDDLE_3_8 (vec2(-SQRT_1_2, +SQRT_1_2).xyxy)
+#else
+#define TWIDDLE_1_8 (vec2(+SQRT_1_2, -SQRT_1_2).xyxy)
+#define TWIDDLE_3_8 (vec2(-SQRT_1_2, -SQRT_1_2).xyxy)
+#endif
+
+// 1-component twiddle, pack in vec2.
+#else
+
+#define FFT_OUTPUT_STEP 1u
+#define FFT_OUTPUT_SHIFT 0u
+#define ctwiddle vec2
+ctwiddle twiddle(uint k, uint p)
+{
+    // Trancendentals should always be done in highp.
+    FFT_HIGHP float angle = PI_DIR * float(k) / float(p);
+    return ctwiddle(cos(angle), sin(angle));
+}
+
+#ifdef FFT_INVERSE
+#define TWIDDLE_1_8 (vec2(+SQRT_1_2, +SQRT_1_2))
+#define TWIDDLE_3_8 (vec2(-SQRT_1_2, +SQRT_1_2))
+#else
+#define TWIDDLE_1_8 (vec2(+SQRT_1_2, -SQRT_1_2))
+#define TWIDDLE_3_8 (vec2(-SQRT_1_2, -SQRT_1_2))
+#endif
+
+#endif
+
+// Complex multiply by v * -j. Trivial case which can avoid mul/add.
+vec4 cmul_minus_j(vec4 v)
+{
+    return vec4(v.y, -v.x, v.w, -v.z);
+}
+
+vec2 cmul_minus_j(vec2 v)
+{
+    return vec2(v.y, -v.x);
+}
+
+// Complex multiply by v * +j. Trivial case which can avoid mul/add.
+vec4 cmul_plus_j(vec4 v)
+{
+    return vec4(-v.y, v.x, -v.w, v.z);
+}
+
+vec2 cmul_plus_j(vec2 v)
+{
+    return vec2(-v.y, v.x);
+}
+
+#ifdef FFT_INVERSE
+#define cmul_dir_j(v) cmul_plus_j(v)
+#else
+#define cmul_dir_j(v) cmul_minus_j(v)
+#endif
+
+// Calculate an in-place butterfly with twiddle factors.
+// a ----------- a + wb
+//        \   /
+//         \ /
+//          X
+//         / \
+//        /   \
+// w * b ------- a - wb
+//
+void butterfly(inout vec4 a, inout vec4 b, vec4 w)
+{
+    vec4 t = cmul(b, w);
+    b = a - t;
+    a = a + t;
+}
+
+// Computes butterflies, but the twiddle factors for the two butterflies are
+// identical.
+void butterfly(inout vec4 a, inout vec4 b, vec2 w)
+{
+    butterfly(a, b, w.xyxy);
+}
+
+void butterfly(inout vec2 a, inout vec2 b, vec2 w)
+{
+    vec2 t = cmul(b, w);
+    b = a - t;
+    a = a + t;
+}
+
+// First pass butterfly, special case where w = 1.
+void butterfly_p1(inout vec4 a, inout vec4 b)
+{
+    vec4 t = b;
+    b = a - t;
+    a = a + t;
+}
+
+// First pass butterfly, but also multiply in a twiddle factor of -j to b afterwards.
+// Used in P == 1 transforms for radix-4, radix-8 etc.
+void butterfly_p1_minus_j(inout vec4 a, inout vec4 b)
+{
+    vec4 t = b;
+    b = vec4(1.0, -1.0, 1.0, -1.0) * (a.yxwz - t.yxwz);
+    a = a + t;
+}
+
+void butterfly_p1_plus_j(inout vec4 a, inout vec4 b)
+{
+    vec4 t = b;
+    b = vec4(-1.0, 1.0, -1.0, 1.0) * (a.yxwz - t.yxwz);
+    a = a + t;
+}
+
+void butterfly_p1(inout vec2 a, inout vec2 b)
+{
+    vec2 t = b;
+    b = a - t;
+    a = a + t;
+}
+
+void butterfly_p1_minus_j(inout vec2 a, inout vec2 b)
+{
+    vec2 t = b;
+    b = vec2(1.0, -1.0) * (a.yx - t.yx);
+    a = a + t;
+}
+
+void butterfly_p1_plus_j(inout vec2 a, inout vec2 b)
+{
+    vec2 t = b;
+    b = vec2(-1.0, 1.0) * (a.yx - t.yx);
+    a = a + t;
+}
+
+#ifdef FFT_INVERSE
+#define butterfly_p1_dir_j(a, b) butterfly_p1_plus_j(a, b)
+#else
+#define butterfly_p1_dir_j(a, b) butterfly_p1_minus_j(a, b)
+#endif
+
+#ifdef FFT_RESOLVE_REAL_TO_COMPLEX
+vec2 r2c_twiddle(uint i, uint p)
+{
+    vec2 w = -twiddle(i, p);
+    return vec2(-w.y, w.x);
+}
+
+// See http://www.engineeringproductivitytools.com/stuff/T0001/PT10.HTM for
+// how the real-to-complex and complex-to-real resolve passes work.
+// The final real-to-complex transform pass is done by extracting two interleaved FFTs by conjugate symmetry.
+
+// If we have a real sequence:
+// (r0, r1, r2, r3, r4, ...), we merge two adjacent real values to a sequence of complex numbers.
+// We take the FFT of this complex sequence as normal.
+// What we end up with really is:
+// FFT((r0, r2, r4, r6, ...)) + FFT(j * (r1, r3, r5, r7, ...)).
+// If we know the individual FFTs of the even and the odds we can complete the FFT by a single decimation-in-frequency stage.
+// By conjugate symmetry, we can extract the even and odd FFTs and complex our transform.
+// Complex-to-real is just the same thing, but in reverse.
+
+void FFT_real_to_complex(uvec2 i)
+{
+    uint stride = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+    uint offset = i.y * stride;
+
+    if (i.x == 0u)
+    {
+#ifdef FFT_INPUT_TEXTURE
+        vec2 x = load_texture(i);
+#else
+        vec2 x = load_global(offset);
+#endif
+
+#ifdef FFT_OUTPUT_IMAGE
+        store(ivec2(i), vec2(x.x + x.y, 0.0));
+        store(ivec2(i) + ivec2(stride, 0), vec2(x.x - x.y, 0.0));
+#else
+        store_global(2u * offset, vec2(x.x + x.y, 0.0));
+        store_global(2u * offset + stride, vec2(x.x - x.y, 0.0));
+#endif
+    }
+    else
+    {
+#ifdef FFT_INPUT_TEXTURE
+        vec2 a = load_texture(i);
+        vec2 b = load_texture(uvec2(stride - i.x, i.y));
+#else
+        vec2 a = load_global(offset + i.x);
+        vec2 b = load_global(offset + stride - i.x);
+#endif
+        b = vec2(b.x, -b.y);
+        vec2 fe = a + b;
+        vec2 fo = cmul(a - b, r2c_twiddle(i.x, stride));
+
+#ifdef FFT_OUTPUT_IMAGE
+        store(ivec2(i), 0.5 * (fe + fo));
+#else
+        store_global(2u * offset + i.x, 0.5 * (fe + fo));
+#endif
+    }
+}
+#endif
+
+#ifdef FFT_RESOLVE_COMPLEX_TO_REAL
+vec2 c2r_twiddle(uint i, uint p)
+{
+    vec2 w = twiddle(i, p);
+    return vec2(-w.y, w.x);
+}
+
+void FFT_complex_to_real(uvec2 i)
+{
+    uint stride = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+    uint offset = i.y * stride;
+
+#ifdef FFT_INPUT_TEXTURE
+    vec2 a = load_texture(i);
+    vec2 b = load_texture(uvec2(stride - i.x, i.y));
+#else
+    vec2 a = load_global(2u * offset + i.x);
+    vec2 b = load_global(2u * offset + stride - i.x);
+#endif
+    b = vec2(b.x, -b.y);
+    vec2 even = a + b;
+    vec2 odd = cmul(a - b, c2r_twiddle(i.x, stride));
+
+    store_global(offset + i.x, even + odd);
+}
+#endif
+
+/* Copyright (C) 2015 Hans-Kristian Arntzen <maister@archlinux.us>
+ *
+ * Permission is hereby granted, free of charge,
+ * to any person obtaining a copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+ * and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+void FFT8_p1(inout cfloat a, inout cfloat b, inout cfloat c, inout cfloat d, inout cfloat e, inout cfloat f, inout cfloat g, inout cfloat h)
+{
+    butterfly_p1(a, e);
+    butterfly_p1(b, f);
+    butterfly_p1_dir_j(c, g);
+    butterfly_p1_dir_j(d, h);
+
+    butterfly_p1(a, c);
+    butterfly_p1_dir_j(b, d);
+    butterfly_p1(e, g);
+    butterfly_p1(f, h);
+
+    butterfly_p1(a, b);
+    butterfly_p1(c, d);
+    butterfly(e, f, TWIDDLE_1_8);
+    butterfly(g, h, TWIDDLE_3_8);
+}
+
+void FFT8(inout cfloat a, inout cfloat b, inout cfloat c, inout cfloat d, inout cfloat e, inout cfloat f, inout cfloat g, inout cfloat h, uint i, uint p)
+{
+    uint k = i & (p - 1u);
+
+    ctwiddle w = twiddle(k, p);
+    butterfly(a, e, w);
+    butterfly(b, f, w);
+    butterfly(c, g, w);
+    butterfly(d, h, w);
+
+    ctwiddle w0 = twiddle(k, 2u * p);
+    ctwiddle w1 = cmul_dir_j(w0);
+
+    butterfly(a, c, w0);
+    butterfly(b, d, w0);
+    butterfly(e, g, w1);
+    butterfly(f, h, w1);
+
+    ctwiddle W0 = twiddle(k, 4u * p);
+    ctwiddle W1 = cmul(W0, TWIDDLE_1_8);
+    ctwiddle W2 = cmul_dir_j(W0);
+    ctwiddle W3 = cmul_dir_j(W1);
+
+    butterfly(a, b, W0);
+    butterfly(c, d, W2);
+    butterfly(e, f, W1);
+    butterfly(g, h, W3);
+}
+
+void FFT8_p1_horiz(uvec2 i)
+{
+    uint octa_samples = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+    uint offset = i.y * octa_samples * 8u;
+
+#ifdef FFT_INPUT_TEXTURE
+    cfloat a = load_texture(i);
+    cfloat b = load_texture(i + uvec2(octa_samples, 0u));
+    cfloat c = load_texture(i + uvec2(2u * octa_samples, 0u));
+    cfloat d = load_texture(i + uvec2(3u * octa_samples, 0u));
+    cfloat e = load_texture(i + uvec2(4u * octa_samples, 0u));
+    cfloat f = load_texture(i + uvec2(5u * octa_samples, 0u));
+    cfloat g = load_texture(i + uvec2(6u * octa_samples, 0u));
+    cfloat h = load_texture(i + uvec2(7u * octa_samples, 0u));
+#else
+    cfloat a = load_global(offset + i.x);
+    cfloat b = load_global(offset + i.x + octa_samples);
+    cfloat c = load_global(offset + i.x + 2u * octa_samples);
+    cfloat d = load_global(offset + i.x + 3u * octa_samples);
+    cfloat e = load_global(offset + i.x + 4u * octa_samples);
+    cfloat f = load_global(offset + i.x + 5u * octa_samples);
+    cfloat g = load_global(offset + i.x + 6u * octa_samples);
+    cfloat h = load_global(offset + i.x + 7u * octa_samples);
+#endif
+    FFT8_p1(a, b, c, d, e, f, g, h);
+
+#ifndef FFT_OUTPUT_IMAGE
+#if FFT_CVECTOR_SIZE == 4
+    store_global(offset + 8u * i.x + 0u, cfloat(a.x, e.x, c.x, g.x));
+    store_global(offset + 8u * i.x + 1u, cfloat(b.x, f.x, d.x, h.x));
+    store_global(offset + 8u * i.x + 2u, cfloat(a.y, e.y, c.y, g.y));
+    store_global(offset + 8u * i.x + 3u, cfloat(b.y, f.y, d.y, h.y));
+    store_global(offset + 8u * i.x + 4u, cfloat(a.z, e.z, c.z, g.z));
+    store_global(offset + 8u * i.x + 5u, cfloat(b.z, f.z, d.z, h.z));
+    store_global(offset + 8u * i.x + 6u, cfloat(a.w, e.w, c.w, g.w));
+    store_global(offset + 8u * i.x + 7u, cfloat(b.w, f.w, d.w, h.w));
+#elif FFT_CVECTOR_SIZE == 2
+    store_global(offset + 8u * i.x + 0u, cfloat(a.xy, e.xy));
+    store_global(offset + 8u * i.x + 1u, cfloat(c.xy, g.xy));
+    store_global(offset + 8u * i.x + 2u, cfloat(b.xy, f.xy));
+    store_global(offset + 8u * i.x + 3u, cfloat(d.xy, h.xy));
+    store_global(offset + 8u * i.x + 4u, cfloat(a.zw, e.zw));
+    store_global(offset + 8u * i.x + 5u, cfloat(c.zw, g.zw));
+    store_global(offset + 8u * i.x + 6u, cfloat(b.zw, f.zw));
+    store_global(offset + 8u * i.x + 7u, cfloat(d.zw, h.zw));
+#else
+    store_global(offset + 8u * i.x + 0u, a);
+    store_global(offset + 8u * i.x + 1u, e);
+    store_global(offset + 8u * i.x + 2u, c);
+    store_global(offset + 8u * i.x + 3u, g);
+    store_global(offset + 8u * i.x + 4u, b);
+    store_global(offset + 8u * i.x + 5u, f);
+    store_global(offset + 8u * i.x + 6u, d);
+    store_global(offset + 8u * i.x + 7u, h);
+#endif
+#endif
+}
+
+void FFT8_p1_vert(uvec2 i)
+{
+    uvec2 octa_samples = gl_NumWorkGroups.xy * gl_WorkGroupSize.xy;
+    uint stride = uStride;
+    uint y_stride = stride * octa_samples.y;
+    uint offset = stride * i.y;
+
+#ifdef FFT_INPUT_TEXTURE
+    cfloat a = load_texture(i);
+    cfloat b = load_texture(i + uvec2(0u, octa_samples.y));
+    cfloat c = load_texture(i + uvec2(0u, 2u * octa_samples.y));
+    cfloat d = load_texture(i + uvec2(0u, 3u * octa_samples.y));
+    cfloat e = load_texture(i + uvec2(0u, 4u * octa_samples.y));
+    cfloat f = load_texture(i + uvec2(0u, 5u * octa_samples.y));
+    cfloat g = load_texture(i + uvec2(0u, 6u * octa_samples.y));
+    cfloat h = load_texture(i + uvec2(0u, 7u * octa_samples.y));
+#else
+    cfloat a = load_global(offset + i.x + 0u * y_stride);
+    cfloat b = load_global(offset + i.x + 1u * y_stride);
+    cfloat c = load_global(offset + i.x + 2u * y_stride);
+    cfloat d = load_global(offset + i.x + 3u * y_stride);
+    cfloat e = load_global(offset + i.x + 4u * y_stride);
+    cfloat f = load_global(offset + i.x + 5u * y_stride);
+    cfloat g = load_global(offset + i.x + 6u * y_stride);
+    cfloat h = load_global(offset + i.x + 7u * y_stride);
+#endif
+
+    FFT8_p1(a, b, c, d, e, f, g, h);
+
+#ifndef FFT_OUTPUT_IMAGE
+    store_global((8u * i.y + 0u) * stride + i.x, a);
+    store_global((8u * i.y + 1u) * stride + i.x, e);
+    store_global((8u * i.y + 2u) * stride + i.x, c);
+    store_global((8u * i.y + 3u) * stride + i.x, g);
+    store_global((8u * i.y + 4u) * stride + i.x, b);
+    store_global((8u * i.y + 5u) * stride + i.x, f);
+    store_global((8u * i.y + 6u) * stride + i.x, d);
+    store_global((8u * i.y + 7u) * stride + i.x, h);
+#endif
+}
+
+void FFT8_horiz(uvec2 i, uint p)
+{
+    uint octa_samples = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+    uint offset = i.y * octa_samples * 8u;
+
+    cfloat a = load_global(offset + i.x);
+    cfloat b = load_global(offset + i.x + octa_samples);
+    cfloat c = load_global(offset + i.x + 2u * octa_samples);
+    cfloat d = load_global(offset + i.x + 3u * octa_samples);
+    cfloat e = load_global(offset + i.x + 4u * octa_samples);
+    cfloat f = load_global(offset + i.x + 5u * octa_samples);
+    cfloat g = load_global(offset + i.x + 6u * octa_samples);
+    cfloat h = load_global(offset + i.x + 7u * octa_samples);
+
+    FFT8(a, b, c, d, e, f, g, h, FFT_OUTPUT_STEP * i.x, p);
+
+    uint k = (FFT_OUTPUT_STEP * i.x) & (p - 1u);
+    uint j = ((FFT_OUTPUT_STEP * i.x - k) * 8u) + k;
+
+#ifdef FFT_OUTPUT_IMAGE
+    store(ivec2(j + 0u * p, i.y), a);
+    store(ivec2(j + 1u * p, i.y), e);
+    store(ivec2(j + 2u * p, i.y), c);
+    store(ivec2(j + 3u * p, i.y), g);
+    store(ivec2(j + 4u * p, i.y), b);
+    store(ivec2(j + 5u * p, i.y), f);
+    store(ivec2(j + 6u * p, i.y), d);
+    store(ivec2(j + 7u * p, i.y), h);
+#else
+    store_global(offset + ((j + 0u * p) >> FFT_OUTPUT_SHIFT), a);
+    store_global(offset + ((j + 1u * p) >> FFT_OUTPUT_SHIFT), e);
+    store_global(offset + ((j + 2u * p) >> FFT_OUTPUT_SHIFT), c);
+    store_global(offset + ((j + 3u * p) >> FFT_OUTPUT_SHIFT), g);
+    store_global(offset + ((j + 4u * p) >> FFT_OUTPUT_SHIFT), b);
+    store_global(offset + ((j + 5u * p) >> FFT_OUTPUT_SHIFT), f);
+    store_global(offset + ((j + 6u * p) >> FFT_OUTPUT_SHIFT), d);
+    store_global(offset + ((j + 7u * p) >> FFT_OUTPUT_SHIFT), h);
+#endif
+}
+
+void FFT8_vert(uvec2 i, uint p)
+{
+    uvec2 octa_samples = gl_NumWorkGroups.xy * gl_WorkGroupSize.xy;
+    uint stride = uStride;
+    uint y_stride = stride * octa_samples.y;
+    uint offset = stride * i.y;
+
+    cfloat a = load_global(offset + i.x + 0u * y_stride);
+    cfloat b = load_global(offset + i.x + 1u * y_stride);
+    cfloat c = load_global(offset + i.x + 2u * y_stride);
+    cfloat d = load_global(offset + i.x + 3u * y_stride);
+    cfloat e = load_global(offset + i.x + 4u * y_stride);
+    cfloat f = load_global(offset + i.x + 5u * y_stride);
+    cfloat g = load_global(offset + i.x + 6u * y_stride);
+    cfloat h = load_global(offset + i.x + 7u * y_stride);
+
+    FFT8(a, b, c, d, e, f, g, h, i.y, p);
+
+    uint k = i.y & (p - 1u);
+    uint j = ((i.y - k) * 8u) + k;
+
+#ifdef FFT_OUTPUT_IMAGE
+    store(ivec2(i.x, j + 0u * p), a);
+    store(ivec2(i.x, j + 1u * p), e);
+    store(ivec2(i.x, j + 2u * p), c);
+    store(ivec2(i.x, j + 3u * p), g);
+    store(ivec2(i.x, j + 4u * p), b);
+    store(ivec2(i.x, j + 5u * p), f);
+    store(ivec2(i.x, j + 6u * p), d);
+    store(ivec2(i.x, j + 7u * p), h);
+#else
+    store_global(stride * (j + 0u * p) + i.x, a);
+    store_global(stride * (j + 1u * p) + i.x, e);
+    store_global(stride * (j + 2u * p) + i.x, c);
+    store_global(stride * (j + 3u * p) + i.x, g);
+    store_global(stride * (j + 4u * p) + i.x, b);
+    store_global(stride * (j + 5u * p) + i.x, f);
+    store_global(stride * (j + 6u * p) + i.x, d);
+    store_global(stride * (j + 7u * p) + i.x, h);
+#endif
+}
+
+/* Copyright (C) 2015 Hans-Kristian Arntzen <maister@archlinux.us>
+ *
+ * Permission is hereby granted, free of charge,
+ * to any person obtaining a copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+ * and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+// Most (all?) desktop GPUs have banked shared memory.
+// We want to avoid bank conflicts as much as possible.
+// If we don't pad the shared memory, threads in the same warp/wavefront will hit the same
+// shared memory banks, and stall as each bank and only process a fixed number of requests per cycle.
+// By padding, we "smear" out the requests to more banks, which greatly improves performance.
+
+// For architectures without banked shared memory,
+// this design makes no sense, so it's a pretty important performance bit to set correctly.
+
+#ifndef FFT_SHARED_BANKED
+#error FFT_SHARED_BANKED must be defined.
+#endif
+
+#if FFT_SHARED_BANKED
+#define FFT_BANK_CONFLICT_PADDING 1u
+#else
+#define FFT_BANK_CONFLICT_PADDING 0u
+#endif
+
+#define FFT_SHARED_SIZE (uint(FFT_RADIX) + FFT_BANK_CONFLICT_PADDING)
+
+uint get_shared_base(uint fft)
+{
+    return FFT_SHARED_SIZE * (gl_LocalInvocationID.y * gl_WorkGroupSize.x + fft);
+}
+
+#if FFT_SHARED_BANKED
+
+// Implementations with banked shared memory like to write 32-bit at a time,
+// since that's typically how big transactions each shared memory bank can handle.
+// If we try to write vec4s in one go (which will get split up to 4 writes anyways),
+// we end up with 4-way bank conflicts no matter what we do.
+
+#if defined(FFT_VEC8)
+shared uint tmpx[FFT_SHARED_SIZE * gl_WorkGroupSize.x * gl_WorkGroupSize.y];
+shared uint tmpy[FFT_SHARED_SIZE * gl_WorkGroupSize.x * gl_WorkGroupSize.y];
+shared uint tmpz[FFT_SHARED_SIZE * gl_WorkGroupSize.x * gl_WorkGroupSize.y];
+shared uint tmpw[FFT_SHARED_SIZE * gl_WorkGroupSize.x * gl_WorkGroupSize.y];
+#else
+shared float tmpx[FFT_SHARED_SIZE * gl_WorkGroupSize.x * gl_WorkGroupSize.y];
+shared float tmpy[FFT_SHARED_SIZE * gl_WorkGroupSize.x * gl_WorkGroupSize.y];
+#if defined(FFT_VEC4)
+shared float tmpz[FFT_SHARED_SIZE * gl_WorkGroupSize.x * gl_WorkGroupSize.y];
+shared float tmpw[FFT_SHARED_SIZE * gl_WorkGroupSize.x * gl_WorkGroupSize.y];
+#endif
+#endif
+
+void store_shared(uint offset, cfloat v)
+{
+    tmpx[offset] = v.x;
+    tmpy[offset] = v.y;
+#if defined(FFT_VEC4) || defined(FFT_VEC8)
+    tmpz[offset] = v.z;
+    tmpw[offset] = v.w;
+#endif
+}
+
+void load_shared(uint offset, out cfloat v)
+{
+    v.x = tmpx[offset];
+    v.y = tmpy[offset];
+#if defined(FFT_VEC4) || defined(FFT_VEC8)
+    v.z = tmpz[offset];
+    v.w = tmpw[offset];
+#endif
+}
+#else
+// For non-banked architectures, just store and load directly.
+shared cfloat tmp[FFT_SHARED_SIZE * gl_WorkGroupSize.x * gl_WorkGroupSize.y];
+
+void store_shared(uint offset, cfloat v)
+{
+    tmp[offset] = v;
+}
+
+void load_shared(uint offset, out cfloat v)
+{
+    v = tmp[offset];
+}
+#endif
+
+void store_shared(cfloat a, cfloat b, cfloat c, cfloat d, uint block, uint base)
+{
+    // Interleave and write out in bit-reversed order.
+#if FFT_CVECTOR_SIZE == 4
+    store_shared(base + 4u * block + 0u, cfloat(a.x, c.x, b.x, d.x));
+    store_shared(base + 4u * block + 1u, cfloat(a.y, c.y, b.y, d.y));
+    store_shared(base + 4u * block + 2u, cfloat(a.z, c.z, b.z, d.z));
+    store_shared(base + 4u * block + 3u, cfloat(a.w, c.w, b.w, d.w));
+#elif FFT_CVECTOR_SIZE == 2
+    store_shared(base + 4u * block + 0u, cfloat(a.xy, c.xy));
+    store_shared(base + 4u * block + 1u, cfloat(b.xy, d.xy));
+    store_shared(base + 4u * block + 2u, cfloat(a.zw, c.zw));
+    store_shared(base + 4u * block + 3u, cfloat(b.zw, d.zw));
+#else
+    store_shared(base + 4u * block + 0u, a);
+    store_shared(base + 4u * block + 1u, c);
+    store_shared(base + 4u * block + 2u, b);
+    store_shared(base + 4u * block + 3u, d);
+#endif
+
+    memoryBarrierShared();
+    barrier();
+}
+
+void load_shared(out cfloat a, out cfloat b, out cfloat c, out cfloat d, uint block, uint base)
+{
+    load_shared(base + block + 0u * gl_WorkGroupSize.z, a);
+    load_shared(base + block + 1u * gl_WorkGroupSize.z, b);
+    load_shared(base + block + 2u * gl_WorkGroupSize.z, c);
+    load_shared(base + block + 3u * gl_WorkGroupSize.z, d);
+}
+
+void store_shared(cfloat a, cfloat b, cfloat c, cfloat d, cfloat e, cfloat f, cfloat g, cfloat h, uint block, uint base)
+{
+    // Interleave and write out in bit-reversed order.
+#if FFT_CVECTOR_SIZE == 4
+    store_shared(base + 8u * block + 0u, cfloat(a.x, e.x, c.x, g.x));
+    store_shared(base + 8u * block + 1u, cfloat(b.x, f.x, d.x, h.x));
+    store_shared(base + 8u * block + 2u, cfloat(a.y, e.y, c.y, g.y));
+    store_shared(base + 8u * block + 3u, cfloat(b.y, f.y, d.y, h.y));
+    store_shared(base + 8u * block + 4u, cfloat(a.z, e.z, c.z, g.z));
+    store_shared(base + 8u * block + 5u, cfloat(b.z, f.z, d.z, h.z));
+    store_shared(base + 8u * block + 6u, cfloat(a.w, e.w, c.w, g.w));
+    store_shared(base + 8u * block + 7u, cfloat(b.w, f.w, d.w, h.w));
+#elif FFT_CVECTOR_SIZE == 2 
+    store_shared(base + 8u * block + 0u, cfloat(a.xy, e.xy));
+    store_shared(base + 8u * block + 1u, cfloat(c.xy, g.xy));
+    store_shared(base + 8u * block + 2u, cfloat(b.xy, f.xy));
+    store_shared(base + 8u * block + 3u, cfloat(d.xy, h.xy));
+    store_shared(base + 8u * block + 4u, cfloat(a.zw, e.zw));
+    store_shared(base + 8u * block + 5u, cfloat(c.zw, g.zw));
+    store_shared(base + 8u * block + 6u, cfloat(b.zw, f.zw));
+    store_shared(base + 8u * block + 7u, cfloat(d.zw, h.zw));
+#else
+    store_shared(base + 8u * block + 0u, a);
+    store_shared(base + 8u * block + 1u, e);
+    store_shared(base + 8u * block + 2u, c);
+    store_shared(base + 8u * block + 3u, g);
+    store_shared(base + 8u * block + 4u, b);
+    store_shared(base + 8u * block + 5u, f);
+    store_shared(base + 8u * block + 6u, d);
+    store_shared(base + 8u * block + 7u, h);
+#endif
+
+    memoryBarrierShared();
+    barrier();
+}
+
+void load_shared(out cfloat a, out cfloat b, out cfloat c, out cfloat d, out cfloat e, out cfloat f, out cfloat g, out cfloat h, uint block, uint base)
+{
+    load_shared(base + block + 0u * gl_WorkGroupSize.z, a);
+    load_shared(base + block + 1u * gl_WorkGroupSize.z, b);
+    load_shared(base + block + 2u * gl_WorkGroupSize.z, c);
+    load_shared(base + block + 3u * gl_WorkGroupSize.z, d);
+    load_shared(base + block + 4u * gl_WorkGroupSize.z, e);
+    load_shared(base + block + 5u * gl_WorkGroupSize.z, f);
+    load_shared(base + block + 6u * gl_WorkGroupSize.z, g);
+    load_shared(base + block + 7u * gl_WorkGroupSize.z, h);
+}
+
+/* Copyright (C) 2015 Hans-Kristian Arntzen <maister@archlinux.us>
+ *
+ * Permission is hereby granted, free of charge,
+ * to any person obtaining a copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+ * and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+// Basically the same as FFT16, but 2xFFT-8. See comments in fft_radix16.comp for more.
+
+void FFT64_p1_horiz(uvec2 i)
+{
+    uint octa_samples = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+    uint offset = i.y * octa_samples * 64u;
+
+    uint fft = gl_LocalInvocationID.x;
+    uint block = gl_LocalInvocationID.z;
+    uint base = get_shared_base(fft);
+
+#ifdef FFT_INPUT_TEXTURE
+    cfloat a = load_texture(i + uvec2((block +  0u) * octa_samples, 0u));
+    cfloat b = load_texture(i + uvec2((block +  8u) * octa_samples, 0u));
+    cfloat c = load_texture(i + uvec2((block + 16u) * octa_samples, 0u));
+    cfloat d = load_texture(i + uvec2((block + 24u) * octa_samples, 0u));
+    cfloat e = load_texture(i + uvec2((block + 32u) * octa_samples, 0u));
+    cfloat f = load_texture(i + uvec2((block + 40u) * octa_samples, 0u));
+    cfloat g = load_texture(i + uvec2((block + 48u) * octa_samples, 0u));
+    cfloat h = load_texture(i + uvec2((block + 56u) * octa_samples, 0u));
+#else
+    cfloat a = load_global(offset + i.x + (block +  0u) * octa_samples);
+    cfloat b = load_global(offset + i.x + (block +  8u) * octa_samples);
+    cfloat c = load_global(offset + i.x + (block + 16u) * octa_samples);
+    cfloat d = load_global(offset + i.x + (block + 24u) * octa_samples);
+    cfloat e = load_global(offset + i.x + (block + 32u) * octa_samples);
+    cfloat f = load_global(offset + i.x + (block + 40u) * octa_samples);
+    cfloat g = load_global(offset + i.x + (block + 48u) * octa_samples);
+    cfloat h = load_global(offset + i.x + (block + 56u) * octa_samples);
+#endif
+    FFT8_p1(a, b, c, d, e, f, g, h);
+
+    store_shared(a, b, c, d, e, f, g, h, block, base);
+    load_shared(a, b, c, d, e, f, g, h, block, base);
+
+    const uint p = 8u;
+    FFT8(a, b, c, d, e, f, g, h, FFT_OUTPUT_STEP * block, p);
+
+    uint k = (FFT_OUTPUT_STEP * block) & (p - 1u);
+    uint j = ((FFT_OUTPUT_STEP * block - k) * 8u) + k;
+
+#ifndef FFT_OUTPUT_IMAGE
+    store_global(offset + 64u * i.x + ((j + 0u * p) >> FFT_OUTPUT_SHIFT), a);
+    store_global(offset + 64u * i.x + ((j + 1u * p) >> FFT_OUTPUT_SHIFT), e);
+    store_global(offset + 64u * i.x + ((j + 2u * p) >> FFT_OUTPUT_SHIFT), c);
+    store_global(offset + 64u * i.x + ((j + 3u * p) >> FFT_OUTPUT_SHIFT), g);
+    store_global(offset + 64u * i.x + ((j + 4u * p) >> FFT_OUTPUT_SHIFT), b);
+    store_global(offset + 64u * i.x + ((j + 5u * p) >> FFT_OUTPUT_SHIFT), f);
+    store_global(offset + 64u * i.x + ((j + 6u * p) >> FFT_OUTPUT_SHIFT), d);
+    store_global(offset + 64u * i.x + ((j + 7u * p) >> FFT_OUTPUT_SHIFT), h);
+#endif
+}
+
+void FFT64_horiz(uvec2 i, uint p)
+{
+    uint octa_samples = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+    uint offset = i.y * octa_samples * 64u;
+
+    uint fft = gl_LocalInvocationID.x;
+    uint block = gl_LocalInvocationID.z;
+    uint base = get_shared_base(fft);
+
+    cfloat a = load_global(offset + i.x + (block +  0u) * octa_samples);
+    cfloat b = load_global(offset + i.x + (block +  8u) * octa_samples);
+    cfloat c = load_global(offset + i.x + (block + 16u) * octa_samples);
+    cfloat d = load_global(offset + i.x + (block + 24u) * octa_samples);
+    cfloat e = load_global(offset + i.x + (block + 32u) * octa_samples);
+    cfloat f = load_global(offset + i.x + (block + 40u) * octa_samples);
+    cfloat g = load_global(offset + i.x + (block + 48u) * octa_samples);
+    cfloat h = load_global(offset + i.x + (block + 56u) * octa_samples);
+
+    FFT8(a, b, c, d, e, f, g, h, FFT_OUTPUT_STEP * i.x, p);
+
+    store_shared(a, b, c, d, e, f, g, h, block, base);
+    load_shared(a, b, c, d, e, f, g, h, block, base);
+
+    uint k = (FFT_OUTPUT_STEP * i.x) & (p - 1u);
+    uint j = ((FFT_OUTPUT_STEP * i.x - k) * 64u) + k;
+
+    FFT8(a, b, c, d, e, f, g, h, k + block * p, 8u * p);
+
+#ifdef FFT_OUTPUT_IMAGE
+    store(ivec2(j + (block +  0u) * p, i.y), a);
+    store(ivec2(j + (block +  8u) * p, i.y), e);
+    store(ivec2(j + (block + 16u) * p, i.y), c);
+    store(ivec2(j + (block + 24u) * p, i.y), g);
+    store(ivec2(j + (block + 32u) * p, i.y), b);
+    store(ivec2(j + (block + 40u) * p, i.y), f);
+    store(ivec2(j + (block + 48u) * p, i.y), d);
+    store(ivec2(j + (block + 56u) * p, i.y), h);
+#else
+    store_global(offset + ((j + (block +  0u) * p) >> FFT_OUTPUT_SHIFT), a);
+    store_global(offset + ((j + (block +  8u) * p) >> FFT_OUTPUT_SHIFT), e);
+    store_global(offset + ((j + (block + 16u) * p) >> FFT_OUTPUT_SHIFT), c);
+    store_global(offset + ((j + (block + 24u) * p) >> FFT_OUTPUT_SHIFT), g);
+    store_global(offset + ((j + (block + 32u) * p) >> FFT_OUTPUT_SHIFT), b);
+    store_global(offset + ((j + (block + 40u) * p) >> FFT_OUTPUT_SHIFT), f);
+    store_global(offset + ((j + (block + 48u) * p) >> FFT_OUTPUT_SHIFT), d);
+    store_global(offset + ((j + (block + 56u) * p) >> FFT_OUTPUT_SHIFT), h);
+#endif
+}
+
+void FFT64_p1_vert(uvec2 i)
+{
+    uvec2 octa_samples = gl_NumWorkGroups.xy * gl_WorkGroupSize.xy;
+    uint stride = uStride;
+    uint y_stride = stride * octa_samples.y;
+    uint offset = stride * i.y;
+
+    uint fft = gl_LocalInvocationID.x;
+    uint block = gl_LocalInvocationID.z;
+    uint base = get_shared_base(fft);
+
+#ifdef FFT_INPUT_TEXTURE
+    cfloat a = load_texture(i + uvec2(0u, (block +  0u) * octa_samples.y));
+    cfloat b = load_texture(i + uvec2(0u, (block +  8u) * octa_samples.y));
+    cfloat c = load_texture(i + uvec2(0u, (block + 16u) * octa_samples.y));
+    cfloat d = load_texture(i + uvec2(0u, (block + 24u) * octa_samples.y));
+    cfloat e = load_texture(i + uvec2(0u, (block + 32u) * octa_samples.y));
+    cfloat f = load_texture(i + uvec2(0u, (block + 40u) * octa_samples.y));
+    cfloat g = load_texture(i + uvec2(0u, (block + 48u) * octa_samples.y));
+    cfloat h = load_texture(i + uvec2(0u, (block + 56u) * octa_samples.y));
+#else
+    cfloat a = load_global(offset + i.x + (block +  0u) * y_stride);
+    cfloat b = load_global(offset + i.x + (block +  8u) * y_stride);
+    cfloat c = load_global(offset + i.x + (block + 16u) * y_stride);
+    cfloat d = load_global(offset + i.x + (block + 24u) * y_stride);
+    cfloat e = load_global(offset + i.x + (block + 32u) * y_stride);
+    cfloat f = load_global(offset + i.x + (block + 40u) * y_stride);
+    cfloat g = load_global(offset + i.x + (block + 48u) * y_stride);
+    cfloat h = load_global(offset + i.x + (block + 56u) * y_stride);
+#endif
+
+    FFT8_p1(a, b, c, d, e, f, g, h);
+
+    store_shared(a, b, c, d, e, f, g, h, block, base);
+    load_shared(a, b, c, d, e, f, g, h, block, base);
+
+    const uint p = 8u;
+    FFT8(a, b, c, d, e, f, g, h, block, p);
+
+#ifndef FFT_OUTPUT_IMAGE
+    store_global((64u * i.y + block +  0u) * stride + i.x, a);
+    store_global((64u * i.y + block +  8u) * stride + i.x, e);
+    store_global((64u * i.y + block + 16u) * stride + i.x, c);
+    store_global((64u * i.y + block + 24u) * stride + i.x, g);
+    store_global((64u * i.y + block + 32u) * stride + i.x, b);
+    store_global((64u * i.y + block + 40u) * stride + i.x, f);
+    store_global((64u * i.y + block + 48u) * stride + i.x, d);
+    store_global((64u * i.y + block + 56u) * stride + i.x, h);
+#endif
+}
+
+void FFT64_vert(uvec2 i, uint p)
+{
+    uvec2 octa_samples = gl_NumWorkGroups.xy * gl_WorkGroupSize.xy;
+    uint stride = uStride;
+    uint y_stride = stride * octa_samples.y;
+    uint offset = stride * i.y;
+
+    uint fft = gl_LocalInvocationID.x;
+    uint block = gl_LocalInvocationID.z;
+    uint base = get_shared_base(fft);
+
+    cfloat a = load_global(offset + i.x + (block +  0u) * y_stride);
+    cfloat b = load_global(offset + i.x + (block +  8u) * y_stride);
+    cfloat c = load_global(offset + i.x + (block + 16u) * y_stride);
+    cfloat d = load_global(offset + i.x + (block + 24u) * y_stride);
+    cfloat e = load_global(offset + i.x + (block + 32u) * y_stride);
+    cfloat f = load_global(offset + i.x + (block + 40u) * y_stride);
+    cfloat g = load_global(offset + i.x + (block + 48u) * y_stride);
+    cfloat h = load_global(offset + i.x + (block + 56u) * y_stride);
+
+    FFT8(a, b, c, d, e, f, g, h, i.y, p);
+
+    store_shared(a, b, c, d, block, base);
+    load_shared(a, b, c, d, block, base);
+
+    uint k = i.y & (p - 1u);
+    uint j = ((i.y - k) * 64u) + k;
+
+    FFT8(a, b, c, d, e, f, g, h, k + block * p, 8u * p);
+
+#ifdef FFT_OUTPUT_IMAGE
+    store(ivec2(i.x, j + (block +  0u) * p), a);
+    store(ivec2(i.x, j + (block +  8u) * p), e);
+    store(ivec2(i.x, j + (block + 16u) * p), c);
+    store(ivec2(i.x, j + (block + 24u) * p), g);
+    store(ivec2(i.x, j + (block + 32u) * p), b);
+    store(ivec2(i.x, j + (block + 40u) * p), f);
+    store(ivec2(i.x, j + (block + 48u) * p), d);
+    store(ivec2(i.x, j + (block + 56u) * p), h);
+#else
+    store_global(stride * (j + (block +  0u) * p) + i.x, a);
+    store_global(stride * (j + (block +  8u) * p) + i.x, e);
+    store_global(stride * (j + (block + 16u) * p) + i.x, c);
+    store_global(stride * (j + (block + 24u) * p) + i.x, g);
+    store_global(stride * (j + (block + 32u) * p) + i.x, b);
+    store_global(stride * (j + (block + 40u) * p) + i.x, f);
+    store_global(stride * (j + (block + 48u) * p) + i.x, d);
+    store_global(stride * (j + (block + 56u) * p) + i.x, h);
+#endif
+}
+
+/* Copyright (C) 2015 Hans-Kristian Arntzen <maister@archlinux.us>
+ *
+ * Permission is hereby granted, free of charge,
+ * to any person obtaining a copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+ * and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+// P is the current accumulated radix factor.
+// First pass in an FFT, P == 1, then P will be pass0.radix, then pass0.radix * pass1.radix, and so on ...
+// Used to compute twiddle factors.
+
+#ifndef FFT_P1
+#define uP constant_data.p_stride_padding.x
+#endif
+
+#if FFT_RADIX == 4
+// FFT4 implementation.
+void FFT4_horiz()
+{
+#ifdef FFT_P1
+    FFT4_p1_horiz(gl_GlobalInvocationID.xy);
+#else
+    FFT4_horiz(gl_GlobalInvocationID.xy, uP);
+#endif
+}
+
+void FFT4_vert()
+{
+#ifdef FFT_P1
+    FFT4_p1_vert(gl_GlobalInvocationID.xy);
+#else
+    FFT4_vert(gl_GlobalInvocationID.xy, uP);
+#endif
+}
+
+void FFT4()
+{
+#ifdef FFT_HORIZ
+    FFT4_horiz();
+#else
+    FFT4_vert();
+#endif
+}
+#endif
+
+#if FFT_RADIX == 8
+// FFT8 implementation.
+void FFT8_horiz()
+{
+#ifdef FFT_P1
+    FFT8_p1_horiz(gl_GlobalInvocationID.xy);
+#else
+    FFT8_horiz(gl_GlobalInvocationID.xy, uP);
+#endif
+}
+
+void FFT8_vert()
+{
+#ifdef FFT_P1
+    FFT8_p1_vert(gl_GlobalInvocationID.xy);
+#else
+    FFT8_vert(gl_GlobalInvocationID.xy, uP);
+#endif
+}
+
+void FFT8()
+{
+#ifdef FFT_HORIZ
+    FFT8_horiz();
+#else
+    FFT8_vert();
+#endif
+}
+#endif
+
+#if FFT_RADIX == 16
+void FFT16_horiz()
+{
+#ifdef FFT_P1
+    FFT16_p1_horiz(gl_GlobalInvocationID.xy);
+#else
+    FFT16_horiz(gl_GlobalInvocationID.xy, uP);
+#endif
+}
+
+void FFT16_vert()
+{
+#ifdef FFT_P1
+    FFT16_p1_vert(gl_GlobalInvocationID.xy);
+#else
+    FFT16_vert(gl_GlobalInvocationID.xy, uP);
+#endif
+}
+
+void FFT16()
+{
+#ifdef FFT_HORIZ
+    FFT16_horiz();
+#else
+    FFT16_vert();
+#endif
+}
+#endif
+
+#if FFT_RADIX == 64
+void FFT64_horiz()
+{
+#ifdef FFT_P1
+    FFT64_p1_horiz(gl_GlobalInvocationID.xy);
+#else
+    FFT64_horiz(gl_GlobalInvocationID.xy, uP);
+#endif
+}
+
+void FFT64_vert()
+{
+#ifdef FFT_P1
+    FFT64_p1_vert(gl_GlobalInvocationID.xy);
+#else
+    FFT64_vert(gl_GlobalInvocationID.xy, uP);
+#endif
+}
+
+void FFT64()
+{
+#ifdef FFT_HORIZ
+    FFT64_horiz();
+#else
+    FFT64_vert();
+#endif
+}
+#endif
+
+void main()
+{
+#if defined(FFT_RESOLVE_REAL_TO_COMPLEX)
+    FFT_real_to_complex(gl_GlobalInvocationID.xy);
+#elif defined(FFT_RESOLVE_COMPLEX_TO_REAL)
+    FFT_complex_to_real(gl_GlobalInvocationID.xy);
+#elif FFT_RADIX == 4
+    FFT4();
+#elif FFT_RADIX == 8
+    FFT8();
+#elif FFT_RADIX == 16
+    FFT16();
+#elif FFT_RADIX == 64
+    FFT64();
+#else
+#error Unimplemented FFT radix.
+#endif
+}

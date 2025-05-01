@@ -42,6 +42,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="res\shaders\common\constants.glsl" />
+    <None Include="res\shaders\OpenGL\GL_ftt_a.comp" />
     <None Include="res\shaders\OpenGL\gl_hair_final_composite.comp" />
     <None Include="res\shaders\OpenGL\gl_hair_depth_peel.frag" />
     <None Include="res\shaders\OpenGL\gl_hair_depth_peel.vert" />

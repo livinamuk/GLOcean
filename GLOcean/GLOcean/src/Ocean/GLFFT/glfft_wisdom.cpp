@@ -213,7 +213,6 @@ double FFTWisdom::bench(Context *context, Resource *output, Resource *input,
     FFT fft(context, pass.pass.Nx, pass.pass.Ny, pass.pass.radix, pass.pass.input_target != SSBO ? 1 : pass.pass.radix,
             pass.pass.mode, pass.pass.input_target, pass.pass.output_target,
             cache, options);
-
     return fft.bench(context,
             output, input, params.warmup, params.iterations, params.dispatches, params.timeout);
 }
@@ -401,6 +400,7 @@ std::pair<double, FFTOptions::Performance> FFTWisdom::study(Context *context, co
                     perf.workgroup_size_x = workgroup_size_x;
                     perf.workgroup_size_y = workgroup_size_y;
 
+                   
                     try
                     {
                         // If workgroup sizes are too big for our test, this will throw.
@@ -461,6 +461,8 @@ const pair<const WisdomPass, FFTOptions::Performance>* FFTWisdom::find_optimal_o
     return itr != end(library) ? (&(*itr)) : nullptr;
 }
 
+
+
 const FFTOptions::Performance& FFTWisdom::find_optimal_options_or_default(unsigned Nx, unsigned Ny, unsigned radix,
         Mode mode, Target input_target, Target output_target, const FFTOptions &base_options) const
 {
@@ -484,6 +486,107 @@ const FFTOptions::Performance& FFTWisdom::find_optimal_options_or_default(unsign
 
     return itr != end(library) ? itr->second : base_options.performance;
 }
+
+
+/*
+bool compareWisdomPassKeysForLog(const GLFFT::WisdomPass& a, const GLFFT::WisdomPass& b) {
+    if (a.pass.radix != b.pass.radix) return a.pass.radix < b.pass.radix;
+    if (a.pass.mode != b.pass.mode) return static_cast<int>(a.pass.mode) < static_cast<int>(b.pass.mode);
+    if (a.pass.Nx != b.pass.Nx) return a.pass.Nx < b.pass.Nx;
+    if (a.pass.Ny != b.pass.Ny) return a.pass.Ny < b.pass.Ny;
+    if (a.pass.input_target != b.pass.input_target) return static_cast<int>(a.pass.input_target) < static_cast<int>(b.pass.input_target);
+    if (a.pass.output_target != b.pass.output_target) return static_cast<int>(a.pass.output_target) < static_cast<int>(b.pass.output_target);
+    // Add type comparisons if needed for sorting order
+    if (a.pass.type.fp16 != b.pass.type.fp16) return a.pass.type.fp16 < b.pass.type.fp16;
+    if (a.pass.type.input_fp16 != b.pass.type.input_fp16) return a.pass.type.input_fp16 < b.pass.type.input_fp16;
+    if (a.pass.type.output_fp16 != b.pass.type.output_fp16) return a.pass.type.output_fp16 < b.pass.type.output_fp16;
+    if (a.pass.type.normalize != b.pass.type.normalize) return a.pass.type.normalize < b.pass.type.normalize;
+    return false; // Equal according to this sort
+}
+
+#include <iostream>
+
+
+// --- Replace the existing function in FFTWisdom.cpp with this: ---
+const FFTOptions::Performance& FFTWisdom::find_optimal_options_or_default(unsigned Nx, unsigned Ny, unsigned radix,
+                                                                          Mode mode, Target input_target, Target output_target, const FFTOptions& base_options) const
+{
+    // Construct the key for the lookup based on requested parameters
+    WisdomPass pass = {}; // Use zero-initialization
+    pass.pass.Nx = Nx;
+    pass.pass.Ny = Ny;
+    pass.pass.radix = radix;
+    pass.pass.mode = mode;
+    pass.pass.input_target = input_target;
+    pass.pass.output_target = output_target;
+    pass.pass.type = base_options.type; // *** CRITICAL: Type comes from base_options ***
+
+    // --- START DEBUG LOGGING ---
+    std::cout << "[Wisdom Lookup] Querying Wisdom Object Address: " << this << std::endl;
+    std::cout << "[Wisdom Lookup] Requesting Config For:"
+        << " Nx=" << Nx << " Ny=" << Ny
+        << " Radix=" << radix << " Mode=" << static_cast<int>(mode)
+        << " InTarget=" << static_cast<int>(input_target)
+        << " OutTarget=" << static_cast<int>(output_target)
+        // Log the type info from the 'pass' key we constructed
+        << " Type(fp16=" << pass.pass.type.fp16
+        << " InFp16=" << pass.pass.type.input_fp16
+        << " OutFp16=" << pass.pass.type.output_fp16
+        << " Norm=" << pass.pass.type.normalize << ")"
+        << std::endl;
+
+// Print current map contents for comparison
+    std::cout << "[Wisdom Lookup] Current map state (" << library.size() << " entries):" << std::endl;
+    // Sort keys for consistent log output (optional but helpful)
+    std::vector<WisdomPass> sorted_keys;
+    sorted_keys.reserve(library.size()); // Reserve space
+    for (const auto& pair : library) {
+        sorted_keys.push_back(pair.first);
+    }
+    std::sort(sorted_keys.begin(), sorted_keys.end(), compareWisdomPassKeysForLog);
+
+    for (const auto& key : sorted_keys) {
+        std::cout << "  Stored Key: "
+            << " Nx=" << key.pass.Nx << " Ny=" << key.pass.Ny
+            << " Radix=" << key.pass.radix << " Mode=" << static_cast<int>(key.pass.mode)
+            << " InT=" << static_cast<int>(key.pass.input_target)
+            << " OutT=" << static_cast<int>(key.pass.output_target)
+            << " Type(fp16=" << key.pass.type.fp16
+            << " InFp16=" << key.pass.type.input_fp16
+            << " OutFp16=" << key.pass.type.output_fp16
+            << " Norm=" << key.pass.type.normalize << ")"
+            << std::endl;
+  // Direct comparison test using your operator==
+        if (pass == key) {
+            std::cout << "    --> DIRECT COMPARISON (pass == key) SUCCEEDED!" << std::endl;
+        }
+    }
+    std::cout << "[Wisdom Lookup] --- End map state ---" << std::endl;
+
+    // Perform the actual lookup
+    auto itr = library.find(pass);
+
+    // Report result
+    if (itr != end(library)) {
+        const FFTOptions::Performance& found_perf = itr->second;
+        std::cout << "[Wisdom Lookup]   FOUND entry via map.find! Using saved perf: "
+            << "Banked=" << found_perf.shared_banked
+            << ", Vec=" << found_perf.vector_size
+            << ", WG=(" << found_perf.workgroup_size_x << "," << found_perf.workgroup_size_y << ")"
+            << std::endl;
+        return found_perf;
+    }
+    else {
+        const FFTOptions::Performance& default_perf = base_options.performance;
+        std::cout << "[Wisdom Lookup]   NOT FOUND entry via map.find! Returning DEFAULT perf: "
+            << "Banked=" << default_perf.shared_banked
+            << ", Vec=" << default_perf.vector_size
+            << ", WG=(" << default_perf.workgroup_size_x << "," << default_perf.workgroup_size_y << ")"
+            << std::endl;
+        return default_perf;
+    }
+    // --- END DEBUG LOGGING ---
+}*/
 
 #ifdef GLFFT_SERIALIZATION
 std::string FFTWisdom::archive() const

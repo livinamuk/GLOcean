@@ -9,7 +9,7 @@ uniform mat4 u_model;
 
 const float maxTessLevel = 16.0;
 const float minTessLevel = 1.0;
-const float startFadeDist = 0.0;
+const float startFadeDist = 2.0;
 const float endFadeDist = 40.0;
 const float minPossibleLevel = 1.0;
 const float maxPossibleLevel = 64.0;

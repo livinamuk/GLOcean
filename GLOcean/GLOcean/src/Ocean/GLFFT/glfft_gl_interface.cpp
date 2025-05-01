@@ -81,15 +81,11 @@ void GLCommandBuffer::barrier()
     glMemoryBarrier(GL_ALL_BARRIER_BITS);
 }
 
-void GLCommandBuffer::push_constant_data(unsigned binding, const void *data, size_t size)
-{
+void GLCommandBuffer::push_constant_data(unsigned binding, const void *data, size_t size) {
     glBindBufferBase(GL_UNIFORM_BUFFER, binding, ubos[ubo_index]);
-    void *ptr = glMapBufferRange(GL_UNIFORM_BUFFER,
-            0, CommandBuffer::MaxConstantDataSize,
-            GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+    void *ptr = glMapBufferRange(GL_UNIFORM_BUFFER, 0, CommandBuffer::MaxConstantDataSize, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
 
-    if (ptr)
-    {
+    if (ptr) {
         std::memcpy(ptr, data, size);
         glUnmapBuffer(GL_UNIFORM_BUFFER);
     }
