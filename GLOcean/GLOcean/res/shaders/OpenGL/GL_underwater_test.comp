@@ -4,9 +4,7 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(rgba8, binding = 0) uniform image2D outputImage;
 
 layout(binding = 0) uniform sampler2D WorldPositionTexture;
-layout(binding = 1) uniform sampler2D FFTHeightTexture;
-layout(binding = 2) uniform sampler2D DispXTexture;
-layout(binding = 3) uniform sampler2D DispZTexture;
+layout(binding = 1) uniform sampler2D DisplacementTexture;
 
 uniform uvec2 u_fftGridSize;
 uniform float u_oceanModelMatrixScale;
@@ -23,7 +21,6 @@ void main() {
     }    
     
     vec4 lighting = imageLoad(outputImage, pixelCoords);
-    float fftHeight = texture(FFTHeightTexture, uv_screenspace).r;
     vec3 worldPosition = texture(WorldPositionTexture, uv_screenspace).rgb;
 
     // Skip skybox
@@ -31,21 +28,20 @@ void main() {
         return;
     }
 
-
     const float gridCellsPerWorldUnit = 1.0 / u_oceanModelMatrixScale;
     const vec2 fftGridSize = vec2(u_fftGridSize);
     const vec2 patchWorldSize = fftGridSize * u_oceanModelMatrixScale;
     
     vec2 bestGuessUV = fract(worldPosition.xz / patchWorldSize);
     
-    float dispX = texture(DispXTexture, bestGuessUV).r;
-    float dispZ = texture(DispZTexture, bestGuessUV).r;
+    float dispX = texture(DisplacementTexture, bestGuessUV).x;
+    float dispZ = texture(DisplacementTexture, bestGuessUV).z;
 
     vec2 estimatedDisplacement = vec2(dispX, dispZ) / gridCellsPerWorldUnit;
     vec2 estimatedWorldPosition = worldPosition.xz - estimatedDisplacement;
     vec2 estimatedUV = fract(estimatedWorldPosition / patchWorldSize);
     
-    float height = texture(FFTHeightTexture, estimatedUV).r;
+    float height = texture(DisplacementTexture, estimatedUV).y;
     
     float waterHeight = (height * u_oceanModelMatrixScale) + u_oceanOriginY;
     bool isUnderwater = worldPosition.y < waterHeight;

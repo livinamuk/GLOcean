@@ -38,12 +38,20 @@ namespace OpenGLRenderer {
         Shader oceanCalculateSpectrum;
         Shader oceanUpdateMesh;
         Shader underwaterTest;
+
+        Shader ftt_radix_a;
+        Shader ftt_radix_b;
+        Shader ftt_radix_c;
+        Shader ftt_radix_d;
+        Shader ftt_radix_e;
+
     } g_shaders;
 
     struct FrameBuffers {
         OpenGLFrameBuffer main;
         OpenGLFrameBuffer hair;
-        OpenGLFrameBuffer fft;
+        OpenGLFrameBuffer fft_band0;
+        OpenGLFrameBuffer fft_band1;
     } g_frameBuffers;
 
 
@@ -75,7 +83,11 @@ namespace OpenGLRenderer {
     void RenderSkyBox();
     void UnderwaterTest();
 
+    //void ComputeInverseFFT(GLuint inputHandle, GLuint outputHandle);
+
     void Init() {
+        InitOceanGPUState();
+
         g_frameBuffers.main.Create("Main", 1920, 1080);
         g_frameBuffers.main.CreateAttachment("Color", GL_RGBA8);
         g_frameBuffers.main.CreateAttachment("WorldPosition", GL_RGBA32F);
@@ -89,16 +101,15 @@ namespace OpenGLRenderer {
         g_frameBuffers.hair.CreateAttachment("ViewspaceDepthPrevious", GL_R32F);
         g_frameBuffers.hair.CreateAttachment("Composite", GL_RGBA8);
 
-        g_frameBuffers.fft.Create("FFT", Ocean::GetFFTGridSize().x, Ocean::GetFFTGridSize().y);
-        g_frameBuffers.fft.CreateAttachment("Height", GL_R32F, GL_NEAREST, GL_REPEAT);
-        g_frameBuffers.fft.CreateAttachment("DisplacementX", GL_R32F, GL_NEAREST, GL_REPEAT);
-        g_frameBuffers.fft.CreateAttachment("DisplacementZ", GL_R32F, GL_NEAREST, GL_REPEAT);
-        g_frameBuffers.fft.CreateAttachment("WorldPosition", GL_RGBA32F, GL_NEAREST, GL_REPEAT);
-        g_frameBuffers.fft.CreateAttachment("Normals", GL_RGBA32F, GL_NEAREST, GL_REPEAT);
+        g_frameBuffers.fft_band0.Create("FFT", Ocean::GetFFTResolution(0).x, Ocean::GetFFTResolution(0).y);
+        g_frameBuffers.fft_band0.CreateAttachment("Displacement", GL_RGBA32F, GL_NEAREST, GL_REPEAT);
+        g_frameBuffers.fft_band0.CreateAttachment("Normals", GL_RGBA32F, GL_NEAREST, GL_REPEAT);
+
+        g_frameBuffers.fft_band1.Create("FFT2", Ocean::GetFFTResolution(1).x, Ocean::GetFFTResolution(1).y);
+        g_frameBuffers.fft_band1.CreateAttachment("Displacement", GL_RGBA32F, GL_NEAREST, GL_REPEAT);
+        g_frameBuffers.fft_band1.CreateAttachment("Normals", GL_RGBA32F, GL_NEAREST, GL_REPEAT);
 
         LoadShaders();
-
-        InitOceanGPUState();
 
         g_skybox.Init();
     }
@@ -107,29 +118,21 @@ namespace OpenGLRenderer {
 
         //std::cout << "RenderFrame()\n";
 
-        g_frameBuffers.fft.Bind();
-        g_frameBuffers.fft.SetViewport();
-        g_frameBuffers.fft.DrawBuffers({ "Height" });
-        glClearColor(1.0f, 0.0f, 0.0f, 0.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
         g_frameBuffers.main.Bind();
         g_frameBuffers.main.SetViewport();
         g_frameBuffers.main.DrawBuffers({ "Color", "WorldPosition" });
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        static bool init = false;
+        //static bool init = false;
+        //if (Input::KeyPressed(HELL_KEY_P)) {
+        //    init = true;
+        //}
+        //if (init) {
+        //    ComputeOceanFFT();
+        //}
 
-        if (Input::KeyPressed(HELL_KEY_P)) {
-            init = true;
-        }
-
-        if (init) {
-            ComputeOceanFFT();
-        }
-
-        //ComputeOceanFFT();
+        ComputeOceanFFT();
         RenderSkyBox();
         RenderLighting();
         RenderHair();
@@ -165,20 +168,21 @@ namespace OpenGLRenderer {
         }
 
         height *= 0.5f;
+        if (debugMode == 0) {
+            height = g_frameBuffers.fft_band0.GetWidth();
+            g_frameBuffers.fft_band0.BlitToDefaultFrameBuffer("Displacement", 0, 0, height, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        }
         if (debugMode == 1) {
-            g_frameBuffers.fft.BlitToDefaultFrameBuffer("Height", 0, 0, height, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            height = g_frameBuffers.fft_band0.GetWidth();
+            g_frameBuffers.fft_band1.BlitToDefaultFrameBuffer("Displacement", 0, 0, height, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
         }
         if (debugMode == 2) {
-            g_frameBuffers.fft.BlitToDefaultFrameBuffer("DisplacementX", 0, 0, height, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            height = g_frameBuffers.fft_band1.GetWidth();
+            g_frameBuffers.fft_band0.BlitToDefaultFrameBuffer("Normals", 0, 0, height, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
         }
         if (debugMode == 3) {
-            g_frameBuffers.fft.BlitToDefaultFrameBuffer("DisplacementZ", 0, 0, height, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-        }
-        if (debugMode == 4) {
-            g_frameBuffers.fft.BlitToDefaultFrameBuffer("WorldPosition", 0, 0, height, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-        }
-        if (debugMode == 5) {
-            g_frameBuffers.fft.BlitToDefaultFrameBuffer("Normals", 0, 0, height, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            height = g_frameBuffers.fft_band1.GetWidth();
+            g_frameBuffers.fft_band1.BlitToDefaultFrameBuffer("Normals", 0, 0, height, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
         }
 
         glfwSwapBuffers(OpenGLBackend::GetWindowPtr());
@@ -441,7 +445,7 @@ namespace OpenGLRenderer {
         GLbitfield staticFlags = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
         GLbitfield dynamicFlags = GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
 
-        const glm::uvec2 oceanSize = Ocean::GetFFTGridSize();
+        const glm::uvec2 oceanSize = Ocean::GetBaseFFTResolution();
 
         g_fftH0band0SSBO.PreAllocate(Ocean::GetFFTResolution(0).x * Ocean::GetFFTResolution(0).y * sizeof(std::complex<float>), staticFlags);
         g_fftH0band1SSBO.PreAllocate(Ocean::GetFFTResolution(1).x * Ocean::GetFFTResolution(1).y * sizeof(std::complex<float>), staticFlags);
@@ -466,6 +470,32 @@ namespace OpenGLRenderer {
 
     void ComputeOceanFFT() {
 
+        FFTBand& band0 = Ocean::GetFFTBandByIndex(0);
+        float y = -0.65f;
+        //float size = band0.patchSimSize.x;
+        float size = 30.0f;
+        glm::vec3 p0 = glm::vec3(0, y, 0);
+        glm::vec3 p1 = glm::vec3(size, y, 0);
+        glm::vec3 p2 = glm::vec3(0, y, size);
+        glm::vec3 p3 = glm::vec3(size, y, size);
+        glm::vec3 color = WHITE;
+        DrawLine(p0, p1, color);
+        DrawLine(p0, p2, color);
+        DrawLine(p3, p1, color);
+        DrawLine(p3, p2, color);
+
+        size = 12.0f;
+        p0 = glm::vec3(0, y, 0);
+        p1 = glm::vec3(size, y, 0);
+        p2 = glm::vec3(0, y, size);
+        p3 = glm::vec3(size, y, size);
+        color = WHITE;
+        DrawLine(p0, p1, color);
+        DrawLine(p0, p2, color);
+        DrawLine(p3, p1, color);
+        DrawLine(p3, p2, color);
+
+
         //Timer("ComputeFTT");
 
         static double lastTime = glfwGetTime();
@@ -473,26 +503,43 @@ namespace OpenGLRenderer {
         float deltaTime = float(currentTime - lastTime);
         lastTime = currentTime;
 
+        static bool doTime = true;
+
+
         static float globalTime = 50.0f;
-        //globalTime += deltaTime;
+        if (doTime) {
+            globalTime += deltaTime;
+        }
+        else {
+            globalTime = 50.0f;
+        }
+        if (Input::KeyPressed(HELL_KEY_T)) {
+            doTime = !doTime;
+        }
         //std::cout << globalTime << "\n";
 
-        int bandCount = 1;
+        int bandCount = 2;
 
         const float gravity = Ocean::GetGravity();
 
         for (int i = 0; i < bandCount; i++) {
 
-            const glm::uvec2 fftGridSize = Ocean::GetFFTGridSize();
-            const glm::uvec2 meshSize = Ocean::GetMeshSize();
+            const glm::uvec2 fftResolution = Ocean::GetFFTResolution(i);
+
+            //const glm::uvec2 fftGridSize = Ocean::GetBaseFFTResolution();
             const glm::vec2 patchSimSize = Ocean::GetPatchSimSize(i);
 
             const GLuint blocksPerSide = 16;
-            const GLuint blockSizeX = fftGridSize.x / blocksPerSide;
-            const GLuint blockSizeY = fftGridSize.y / blocksPerSide;
+            const GLuint blockSizeX = fftResolution.x / blocksPerSide;
+            const GLuint blockSizeY = fftResolution.y / blocksPerSide;
 
             // Generate spectrum on GPU
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_fftH0band0SSBO.GetHandle());
+            if (i == 0) {
+                glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_fftH0band0SSBO.GetHandle());
+            }
+            if (i == 1) {
+                glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_fftH0band1SSBO.GetHandle());
+            }
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g_fftSpectrumInSSBO.GetHandle());
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, g_fftDispInXSSBO.GetHandle());
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, g_fftDispZInSSBO.GetHandle());
@@ -500,7 +547,7 @@ namespace OpenGLRenderer {
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, g_fftGradZInSSBO.GetHandle());
 
             g_shaders.oceanCalculateSpectrum.Use();
-            g_shaders.oceanCalculateSpectrum.SetUvec2("u_fftGridSize", fftGridSize);
+            g_shaders.oceanCalculateSpectrum.SetUvec2("u_fftGridSize", fftResolution);
             g_shaders.oceanCalculateSpectrum.SetVec2("u_patchSimSize", patchSimSize);
             g_shaders.oceanCalculateSpectrum.SetFloat("u_gravity", gravity);
             g_shaders.oceanCalculateSpectrum.SetFloat("u_time", globalTime);
@@ -508,26 +555,28 @@ namespace OpenGLRenderer {
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
             // Perform FFT
-            Ocean::ComputeInverseFFT2D(g_fftSpectrumInSSBO.GetHandle(), g_fftSpectrumOutSSBO.GetHandle());
-            Ocean::ComputeInverseFFT2D(g_fftDispInXSSBO.GetHandle(), g_fftDispXOutSSBO.GetHandle());
-            Ocean::ComputeInverseFFT2D(g_fftDispZInSSBO.GetHandle(), g_fftDispZOutSSBO.GetHandle());
-            Ocean::ComputeInverseFFT2D(g_fftGradXInSSBO.GetHandle(), g_fftGradXOutSSBO.GetHandle());
-            Ocean::ComputeInverseFFT2D(g_fftGradZInSSBO.GetHandle(), g_fftGradZOutSSBO.GetHandle());
+            Ocean::ComputeInverseFFT2D(fftResolution.x, g_fftSpectrumInSSBO.GetHandle(), g_fftSpectrumOutSSBO.GetHandle());
+            Ocean::ComputeInverseFFT2D(fftResolution.x, g_fftDispInXSSBO.GetHandle(), g_fftDispXOutSSBO.GetHandle());
+            Ocean::ComputeInverseFFT2D(fftResolution.x, g_fftDispZInSSBO.GetHandle(), g_fftDispZOutSSBO.GetHandle());
+            Ocean::ComputeInverseFFT2D(fftResolution.x, g_fftGradXInSSBO.GetHandle(), g_fftGradXOutSSBO.GetHandle());
+            Ocean::ComputeInverseFFT2D(fftResolution.x, g_fftGradZInSSBO.GetHandle(), g_fftGradZOutSSBO.GetHandle());
 
             // Update mesh position
-            glBindImageTexture(0, g_frameBuffers.fft.GetColorAttachmentHandleByName("Height"), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
-            glBindImageTexture(1, g_frameBuffers.fft.GetColorAttachmentHandleByName("DisplacementX"), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
-            glBindImageTexture(2, g_frameBuffers.fft.GetColorAttachmentHandleByName("DisplacementZ"), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
-            glBindImageTexture(3, g_frameBuffers.fft.GetColorAttachmentHandleByName("WorldPosition"), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
-            glBindImageTexture(4, g_frameBuffers.fft.GetColorAttachmentHandleByName("Normals"), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+            if (i == 0) {
+                glBindImageTexture(0, g_frameBuffers.fft_band0.GetColorAttachmentHandleByName("Displacement"), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+                glBindImageTexture(1, g_frameBuffers.fft_band0.GetColorAttachmentHandleByName("Normals"), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+            }
+            if (i == 1) {
+                glBindImageTexture(0, g_frameBuffers.fft_band1.GetColorAttachmentHandleByName("Displacement"), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+                glBindImageTexture(1, g_frameBuffers.fft_band1.GetColorAttachmentHandleByName("Normals"), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+            }
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_fftSpectrumOutSSBO.GetHandle());
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, g_fftDispXOutSSBO.GetHandle());
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, g_fftDispZOutSSBO.GetHandle());
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, g_fftGradXOutSSBO.GetHandle());
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, g_fftGradZOutSSBO.GetHandle());
             g_shaders.oceanUpdateMesh.Use();
-            g_shaders.oceanUpdateMesh.SetUvec2("u_fftGridSize", fftGridSize);
-            g_shaders.oceanUpdateMesh.SetUvec2("u_meshSize", meshSize);
+            g_shaders.oceanUpdateMesh.SetUvec2("u_fftGridSize", fftResolution);
             g_shaders.oceanUpdateMesh.SetFloat("u_dispScale", Ocean::GetDisplacementScale());
             g_shaders.oceanUpdateMesh.SetFloat("u_heightScale", Ocean::GetHeightScale());
 
@@ -574,12 +623,12 @@ namespace OpenGLRenderer {
 
         int min = -20;
         int max = 20;
-        float offset = (max - min) * Ocean::GetFFTGridSize().x * scale;
+        float offset = (max - min) * Ocean::GetBaseFFTResolution().x * scale;
 
         if (test) {
             min = 0;
             max = 1;
-            offset = Ocean::GetFFTGridSize().x * scale;
+            offset = Ocean::GetBaseFFTResolution().x * scale;
         }
 
         glm::mat4 projectionMatrix = Camera::GetProjectionMatrix();
@@ -587,7 +636,11 @@ namespace OpenGLRenderer {
         glm::vec3 viewPos = Camera::GetViewPos();
         glm::mat4 projectionView = projectionMatrix * viewMatrix;
 
-        float patchOffset = Ocean::GetFFTGridSize().y * scale;
+        float patchOffset = Ocean::GetBaseFFTResolution().y * scale;
+
+
+        DrawPoint(glm::vec3(0, -0.65f, 0), WHITE);
+        DrawPoint(glm::vec3(patchOffset, -0.65f, 0), WHITE);
 
         Transform tesseleationTransform;
         tesseleationTransform.scale = glm::vec3(scale);
@@ -597,30 +650,16 @@ namespace OpenGLRenderer {
         g_frameBuffers.main.DrawBuffers({ "Color" });
 
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft.GetColorAttachmentHandleByName("Height"));
-
+        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft_band0.GetColorAttachmentHandleByName("Displacement"));
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft.GetColorAttachmentHandleByName("DisplacementX"));
-
+        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft_band0.GetColorAttachmentHandleByName("Normals"));
         glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft.GetColorAttachmentHandleByName("DisplacementZ"));
-
+        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft_band1.GetColorAttachmentHandleByName("Displacement"));
         glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, g_skybox.cubemap.ID);
-
+        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft_band1.GetColorAttachmentHandleByName("Normals"));
         glActiveTexture(GL_TEXTURE4);
-        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft.GetColorAttachmentHandleByName("WorldPosition"));
-
-        glActiveTexture(GL_TEXTURE5);
-        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft.GetColorAttachmentHandleByName("Normals"));
-
-        if (wireframe) {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        }
-        else {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        }
-
+        glBindTexture(GL_TEXTURE_CUBE_MAP, g_skybox.cubemap.ID);
+        glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
         glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 
         glEnable(GL_CULL_FACE);
@@ -633,7 +672,7 @@ namespace OpenGLRenderer {
         g_shaders.oceanGeometry.SetVec3("u_wireframeColor", GREEN);
         g_shaders.oceanGeometry.SetMat4("u_model", tesseleationTransform.to_mat4());
         g_shaders.oceanGeometry.SetVec3("u_viewPos", viewPos);
-        g_shaders.oceanGeometry.SetVec2("u_fftGridSize", Ocean::GetFFTGridSize());
+        g_shaders.oceanGeometry.SetVec2("u_fftGridSize", Ocean::GetBaseFFTResolution());
         g_shaders.oceanGeometry.SetBool("u_wireframe", wireframe);
         g_shaders.oceanGeometry.SetFloat("u_meshSubdivisionFactor", Ocean::GetMeshSubdivisionFactor());
 
@@ -649,6 +688,7 @@ namespace OpenGLRenderer {
                 glDrawElements(GL_PATCHES, g_tesselationPatch.GetIndexCount(), GL_UNSIGNED_INT, nullptr);
             }
         }
+
         // Cleanup
         g_shaders.oceanGeometry.SetBool("u_wireframe", false);
         glEnable(GL_DEPTH_TEST);
@@ -689,7 +729,7 @@ namespace OpenGLRenderer {
 
     void UnderwaterTest() {
         g_shaders.underwaterTest.Use();
-        g_shaders.underwaterTest.SetUvec2("u_fftGridSize", Ocean::GetFFTGridSize());
+        g_shaders.underwaterTest.SetUvec2("u_fftGridSize", Ocean::GetBaseFFTResolution());
         g_shaders.underwaterTest.SetFloat("u_oceanModelMatrixScale", Ocean::GetModelMatrixScale());
         g_shaders.underwaterTest.SetFloat("u_oceanOriginY", Ocean::GetOceanOriginY());
 
@@ -698,17 +738,20 @@ namespace OpenGLRenderer {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, g_frameBuffers.main.GetColorAttachmentHandleByName("WorldPosition"));
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft.GetColorAttachmentHandleByName("Height"));
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft.GetColorAttachmentHandleByName("DisplacementX"));
-        glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft.GetColorAttachmentHandleByName("DisplacementZ"));
+        glBindTexture(GL_TEXTURE_2D, g_frameBuffers.fft_band0.GetColorAttachmentHandleByName("Displacement"));
 
         glDispatchCompute((g_frameBuffers.main.GetWidth() + 7) / 8, (g_frameBuffers.main.GetHeight() + 7) / 8, 1);
     }
 
     void LoadShaders() {
-        if (g_shaders.hairfinalComposite.Load({ "gl_hair_final_composite.comp" }) &&
+        if (
+            g_shaders.ftt_radix_a.Load({ "GL_ftt_radix_a.comp" }) &&
+            g_shaders.ftt_radix_b.Load({ "GL_ftt_radix_b.comp" }) &&
+            g_shaders.ftt_radix_c.Load({ "GL_ftt_radix_c.comp" }) &&
+            g_shaders.ftt_radix_d.Load({ "GL_ftt_radix_d.comp" }) &&
+            g_shaders.ftt_radix_e.Load({ "GL_ftt_radix_e.comp" }) &&
+            
+            g_shaders.hairfinalComposite.Load({ "gl_hair_final_composite.comp" }) &&
             g_shaders.hairLayerComposite.Load({ "gl_hair_layer_composite.comp" }) &&
             g_shaders.solidColor.Load({ "gl_solid_color.vert", "gl_solid_color.frag" }) &&
             g_shaders.skybox.Load({ "GL_skybox.vert", "GL_skybox.frag" }) &&

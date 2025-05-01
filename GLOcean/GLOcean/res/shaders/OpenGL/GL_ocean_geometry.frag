@@ -4,7 +4,8 @@
 
 layout(location = 0) in vec3 WorldPos;
 layout(location = 1) in vec3 Normal;
-layout(binding = 3) uniform samplerCube cubeMap;
+layout(location = 2) in highp vec3 DebugColor;
+layout(binding = 4) uniform samplerCube cubeMap;
 
 out vec4 fragOut;
 
@@ -23,7 +24,7 @@ float computeFogFactorExp2(float dist) {
     return clamp(1.0 - exp(-u_fogDensity * u_fogDensity * dist * dist), 0.0, 1.0);
 }
 
-uniform vec3 u_albedo = vec3(0.01, 0.02, 0.04);
+uniform vec3 u_albedo = vec3(0.01, 0.03, 0.04);
 uniform float u_roughness = 0.1;
 uniform float u_metallic = 0.0; // Should be 0.0 for water
 uniform float u_ao = 1.0;
@@ -64,12 +65,11 @@ void main() {
     vec3 diffuse_IBL = irradiance * albedo * ao;
 
     vec3 reflection_IBL    = texture(cubeMap, R).rgb;
-    vec3 specular_IBL = reflection_IBL * kS * ao * 0.25;
+    vec3 specular_IBL = reflection_IBL * kS * ao * 0.325;
     vec3 Lo_indirect = (kD * diffuse_IBL) + specular_IBL;
     vec3 color_linear = Lo_direct + Lo_indirect;
 
-
-     float dist = length(u_viewPos - WorldPos);
+    float dist = length(u_viewPos - WorldPos);
     float fogRange = u_fogEndDistance - u_fogStartDistance;
 
     // Calculate normalized distance within the fog range (0.0 at start, 1.0 at end)
@@ -79,16 +79,20 @@ void main() {
     float fogFactor = 1.0 - fogEffect;
 
     // Apply the fog using the non-linear factor
-    color_linear = mix(u_fogColor, color_linear, fogFactor);
+    //color_linear = mix(u_fogColor, color_linear, fogFactor);
 
     color_linear = Tonemap_ACES(color_linear);
     vec3 color_gamma = gammaCorrect(color_linear);
 
     fragOut = vec4(color_gamma, 1.0);
 
+    //fragOut = vec4(DebugColor, 1.0);
+
     // wireframe override
     if (u_wireframe) {
         fragOut.rgb = u_wireframeColor;
         fragOut.a   = 1.0;
+        fragOut = vec4(DebugColor, 1.0);
     }
+    //fragOut = vec4(DebugColor, 1.0);
 }
