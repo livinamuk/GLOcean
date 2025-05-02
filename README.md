@@ -2,7 +2,7 @@
 
 ![Screenshot](Screenshot3.png)
 
-![Screenshot](Screenshot2.png)
+![Screenshot](Screenshot4.png)
 
 OpenGL ocean rendered with tessellation shaders and the Fast Fourier Transform library, GLFFT.
 
