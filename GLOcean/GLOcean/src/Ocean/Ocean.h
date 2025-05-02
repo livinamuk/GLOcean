@@ -3,10 +3,12 @@
 #include <complex>
 
 struct FFTBand {
-    glm::uvec2 fftResolution;   // Grid resolution for this band (number of FFT cells per side)
-    glm::vec2 patchSimSize;     // Physical size of one patch in simulation units (meters)
-    glm::vec2 windDir;
-    float amplitude;
+    glm::uvec2 fftResolution = {};   // Grid resolution for this band (number of FFT cells per side)
+    glm::vec2 patchSimSize = {};     // Physical size of one patch in simulation units (meters)
+    glm::vec2 windDir = {};
+    float amplitude = 0;
+    float crossWindDampingCoefficient = 1.0f;         // Controls the presence of waves perpendicular to the wind direction
+    float smallWavesDampingCoefficient = 0.0000001f;  // controls the presence of waves of small wave longitude
     std::vector<std::complex<float>> h0;
 };
 
@@ -19,6 +21,7 @@ namespace Ocean {
     void SetCrossWindDampingCoefficient(float crossWindDampingCoefficient);
     void SetSmallWavesDampingCoefficient(float smallWavesDampingCoefficient);
 
+    std::string FFTBandToString(int bandIndex);
 
     const std::vector<std::complex<float>>& GetH0(int bandIndex);
 
@@ -36,5 +39,6 @@ namespace Ocean {
     const glm::uvec2 GetTesslationMeshSize();
     const glm::uvec2 GetFFTResolution(int bandIndex);
 
+    void ReComputeH0();
     FFTBand& GetFFTBandByIndex(int bandIndex);
 };

@@ -31,15 +31,44 @@ namespace Scene {
         for (GameObject& gameObject : g_gameObjects) {
             gameObject.UpdateRenderItems();
 
-            if (gameObject.m_name == "Mermaid") {
-                float amt = 0.5f;
-                if (Input::KeyDown(HELL_KEY_LEFT)) {
-                    gameObject.m_transform.rotation.y += deltaTime * amt;
-                        std::cout << gameObject.m_transform.rotation.y << "\n";
+           if (gameObject.m_name == "Mermaid") {
+               float amt = 0.5f;
+               if (Input::KeyDown(HELL_KEY_LEFT)) {
+                   gameObject.m_transform.rotation.y += deltaTime * amt;
+                       std::cout << gameObject.m_transform.rotation.y << "\n";
+               }
+               if (Input::KeyDown(HELL_KEY_RIGHT)) {
+                   gameObject.m_transform.rotation.y -= deltaTime * amt;
+                       std::cout << gameObject.m_transform.rotation.y << "\n";
+               }
+           }
+
+            if (gameObject.m_name == "Shark") {
+                float amt = 2.5f;
+                float ramt = 1.5f;
+                if (Input::KeyDown(HELL_KEY_U)) {
+                    gameObject.m_transform.position.x += deltaTime * amt;
+                    std::cout << Util::Vec3ToString(gameObject.m_transform.position) << "\n";
                 }
-                if (Input::KeyDown(HELL_KEY_RIGHT)) {
-                    gameObject.m_transform.rotation.y -= deltaTime * amt;
-                        std::cout << gameObject.m_transform.rotation.y << "\n";
+                if (Input::KeyDown(HELL_KEY_J)) {
+                    gameObject.m_transform.position.x -= deltaTime * amt;
+                    std::cout << Util::Vec3ToString(gameObject.m_transform.position) << "\n";
+                }
+                if (Input::KeyDown(HELL_KEY_H)) {
+                    gameObject.m_transform.position.z += deltaTime * amt;
+                    std::cout << Util::Vec3ToString(gameObject.m_transform.position) << "\n";
+                }
+                if (Input::KeyDown(HELL_KEY_K)) {
+                    gameObject.m_transform.position.z -= deltaTime * amt;
+                    std::cout << Util::Vec3ToString(gameObject.m_transform.position) << "\n";
+                }
+                if (Input::KeyDown(HELL_KEY_Y)) {
+                    gameObject.m_transform.rotation.y += deltaTime * ramt;
+                    std::cout << gameObject.m_transform.rotation.y << "\n";
+                }
+                if (Input::KeyDown(HELL_KEY_I)) {
+                    gameObject.m_transform.rotation.y -= deltaTime * ramt;
+                    std::cout << gameObject.m_transform.rotation.y << "\n";
                 }
             }
 
@@ -128,6 +157,15 @@ namespace Scene {
         mermaid->SetMeshBlendingMode("HairOutta", BlendingMode::HAIR_TOP_LAYER);
         mermaid->SetMeshBlendingMode("HairInner", BlendingMode::HAIR_UNDER_LAYER);
         mermaid->SetName("Mermaid");
+
+
+        CreateGameObject();
+        GameObject* shark = &g_gameObjects[g_gameObjects.size() - 1];
+        shark->SetModel("Shark2");
+        shark->SetPosition(glm::vec3(-2.20, -3.25, 4.87));
+        shark->m_meshMaterialIndices[0] = AssetManager::GetMaterialIndex("Shark");
+        shark->SetRotationY(-5.08011);
+        shark->SetName("Shark");
     }
 
     inline std::vector<RenderItem>& GetRenderItems() { return g_renderItems; }

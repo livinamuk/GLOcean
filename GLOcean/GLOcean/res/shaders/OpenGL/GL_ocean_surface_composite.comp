@@ -1,0 +1,81 @@
+#version 430 core
+#include "../common/constants.glsl"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(rgba8, binding = 0) uniform image2D LightingImage; // output
+
+layout (binding = 0) uniform sampler2D WaterColorTexture;
+layout (binding = 1) uniform sampler2D HairTexture;
+layout (binding = 2) uniform sampler2D waterNormalTexture;
+layout (binding = 3) uniform sampler2D waterDUDVTexture;
+layout (binding = 4) uniform sampler2D UnderwaterMaskTexture;
+layout (binding = 5) uniform sampler2D DownSampeldFinalLightingTexture;
+
+uniform float u_time;
+uniform vec3 u_viewPos;
+uniform mat4 u_inverseProjectionView;
+uniform vec2 u_resolution;
+
+const float distortionSpeed = 0.05;
+const float distortionFactor = 0.004;
+const float waterUVScaling = 0.15;
+
+vec3 IntersectRayWithGroundPlane(vec3 rayOrigin, vec3 rayDir, float groundHeight) {
+    float t = (groundHeight - rayOrigin.y) / rayDir.y;
+    return rayOrigin + rayDir * t;
+}
+
+vec3 GetWorldRay(vec2 fragCoord, vec2 resolution, mat4 inverseProjectionView, vec3 viewPos) {
+    vec2 ndc = (fragCoord / resolution) * 2.0 - 1.0;
+    vec4 clip = vec4(ndc, 1.0, 1.0);
+    vec4 world = inverseProjectionView * clip;
+    world /= world.w;
+    return normalize(world.xyz - viewPos);
+}
+
+void main() {
+	ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);   
+    ivec2 outputImageSize = imageSize(LightingImage);
+    //vec2 uv_screenspace = vec2(pixelCoords) / vec2(outputImageSize);
+    vec2 uv_screenspace = (vec2(pixelCoords) + 0.5) / vec2(outputImageSize);
+
+    // Don't process out of bounds pixels
+    if (pixelCoords.x >= outputImageSize.x || pixelCoords.y >= outputImageSize.y) {
+        return;
+    }    
+    
+    mediump vec4 lighting = imageLoad(LightingImage, pixelCoords);
+    mediump vec3 waterColor = texture(WaterColorTexture, uv_screenspace).rgb;
+    float underwaterMask = texture(UnderwaterMaskTexture, uv_screenspace).r;
+    mediump vec3 downSampledFinalLigthing = texture(DownSampeldFinalLightingTexture, uv_screenspace).rgb;
+    
+    // Cast ray at water plane
+    vec2 fragCoord = pixelCoords;
+    vec3 rayDir = GetWorldRay(fragCoord, u_resolution, u_inverseProjectionView, u_viewPos);
+    vec3 rayOrigin = u_viewPos;
+    float planeHeight = -0.65;
+    float t = (planeHeight - rayOrigin.y) / rayDir.y; // distance to ray hit
+    
+    // Ray points away from the ground plane
+    if (t < 0.0) {
+        vec3 finalColor = lighting.rgb + waterColor;
+        imageStore(LightingImage, pixelCoords, vec4(vec3(finalColor), 1.0));
+    } 
+    else {
+        vec3 waterWorldPos = rayOrigin + rayDir * t;
+        if (underwaterMask > 0) {
+            vec2 uv_waterSurface = vec2(waterWorldPos.x, waterWorldPos.z) * waterUVScaling;
+            float offsetX = mod(u_time * distortionSpeed, 1.0);
+            vec2 uv_dudv = vec2(uv_waterSurface + vec2(offsetX, 0));
+            vec2 distortion = texture(waterDUDVTexture, uv_dudv).rg * 2 - 1;
+            vec2 uv_refraction = uv_screenspace + (distortion * distortionFactor);
+            uv_refraction = clamp(uv_refraction, 0, 1);
+ 
+            vec3 refractedColor = texture(DownSampeldFinalLightingTexture, uv_refraction).rgb;
+            vec3 finalColor = (refractedColor * WATER_COLOR) + waterColor;
+            imageStore(LightingImage, pixelCoords, vec4(vec3(finalColor), 1.0));
+        }
+    }
+       // imageStore(LightingImage, pixelCoords, vec4(vec3(lighting), 1.0));
+}

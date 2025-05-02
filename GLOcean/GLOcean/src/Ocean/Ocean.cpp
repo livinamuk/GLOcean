@@ -25,81 +25,89 @@ namespace Ocean {
     //glm::vec2 g_mWindDir = glm::normalize(glm::vec2(1.0f, 0.0f));
     float g_windSpeed = 75.0f;
     float g_gravity = 9.8f;
-    float g_crossWindDampingCoefficient = 1.0f;         // Controls the presence of waves perpendicular to the wind direction
-    float g_smallWavesDampingCoefficient = 0.0000001f;  // controls the presence of waves of small wave longitude
 
     float g_dispScale = 1.0f;    // Controls the choppiness of the ocean waves
     float g_heightScale = 0.5f;   // Controls the height of the ocean waves
 
     FFTSolver g_FFTSolver;
 
-    float PhillipsSpectrum(const glm::vec2& k, float amplitude, glm::vec2 windDir);
+    float PhillipsSpectrum(const glm::vec2& k, FFTBand& fftBand);
     glm::vec2 KVector(int x, int z, glm::uvec2 fftResolution, glm::vec2 patchSimSize);
     std::vector<std::complex<float>> ComputeH0(FFTBand& fftBand, uint32_t randomSeed);
+
+    std::string FFTBandToString(int bandIndex) {
+        std::string result = "FFT Band " + std::to_string(bandIndex) + "\n";
+        result += "- resolution: " + std::to_string(g_fftBands[bandIndex].fftResolution.x) + "\n";
+        result += "- patchSimSize: " + std::to_string(g_fftBands[bandIndex].patchSimSize.x) + "\n";
+        result += "- amplitude: " + std::to_string(g_fftBands[bandIndex].amplitude) + "\n";
+        result += "- windDir: " + std::to_string(g_fftBands[bandIndex].windDir.x) + ", " + std::to_string(g_fftBands[bandIndex].windDir.y) + "\n";
+        result += "- crossWindDamping: " + std::to_string(g_fftBands[bandIndex].crossWindDampingCoefficient) + "\n";
+        result += "- smallWavesDamping: " + std::to_string(g_fftBands[bandIndex].smallWavesDampingCoefficient) + "\n";
+        return result;
+    }
 
     void Init() {
         float cellScale = g_cellSize;
         float gridSize = g_baseFftResolution;
 
         g_fftBands[0].fftResolution = glm::uvec2(512);
-        g_fftBands[0].patchSimSize = glm::vec2(20);
-        g_fftBands[0].amplitude = 0.0001f;
+        g_fftBands[0].patchSimSize = glm::vec2(150);
+        g_fftBands[0].amplitude = 0.00001f;
         g_fftBands[0].windDir = glm::normalize(glm::vec2(1.0f, 0.1f));
         g_fftBands[0].h0 = ComputeH0(g_fftBands[0], 1337);
 
         g_fftBands[1].fftResolution = glm::uvec2(512);
-        g_fftBands[1].patchSimSize = glm::vec2(179);
+        g_fftBands[1].patchSimSize = glm::vec2(110); // 220 looks good too for more waves
         g_fftBands[1].amplitude = 0.00001f;
-        g_fftBands[1].windDir = glm::normalize(glm::vec2(1.0f, 0.0f));// glm::normalize(glm::vec2(0.9f, -0.4f));
-        g_fftBands[1].h0 = ComputeH0(g_fftBands[1], 1337);
+        g_fftBands[1].windDir = glm::normalize(glm::vec2(0.9f, -0.4f));
+        g_fftBands[1].h0 = ComputeH0(g_fftBands[1], 42);
+    }
 
-        //g_fftBands[1].fftResolution = glm::uvec2(512);
-        //g_fftBands[1].patchSimSize = g_fftBands[0].patchSimSize / glm::vec2(7);
-        //g_fftBands[1].amplitude = 0.0005;// 0.00001f;
-        //g_fftBands[1].windDir = glm::normalize(glm::vec2(0.9f, -0.4f));
-        //g_fftBands[1].h0 = ComputeH0(g_fftBands[1], 42);
+    void ReComputeH0() {
+        g_fftBands[0].h0 = ComputeH0(g_fftBands[0], 1337);
+        g_fftBands[1].h0 = ComputeH0(g_fftBands[1], 42);
     }
 
     void ComputeInverseFFT2D(unsigned int fftResolution, unsigned int inputHandle, unsigned int outputHandle) {
         g_FFTSolver.fftInv2D(inputHandle, outputHandle, fftResolution, fftResolution);
     }
 
-    void SetWindDir(glm::vec2 windDir) {
-     //   if (glm::length(windDir) == 0.0f) {
-     //       std::cout << "Ocean::SetWindDir() failed because wind direction vector has zero length\n";
-     //   }
-     //   g_mWindDir = glm::normalize(windDir);
-    }
-
-    void SetWindSpeed(float windSpeed) {
-        g_windSpeed = windSpeed;
-    }
-
-    void SetCrossWindDampingCoefficient(float crossWindDampingCoefficient) {
-        g_crossWindDampingCoefficient = crossWindDampingCoefficient;
-    }
-
-    void SetSmallWavesDampingCoefficient(float smallWavesDampingCoefficient) {
-        g_smallWavesDampingCoefficient = smallWavesDampingCoefficient;
-    }
+    //void SetWindDir(glm::vec2 windDir) {
+    // //   if (glm::length(windDir) == 0.0f) {
+    // //       std::cout << "Ocean::SetWindDir() failed because wind direction vector has zero length\n";
+    // //   }
+    // //   g_mWindDir = glm::normalize(windDir);
+    //}
+    //
+    //void SetWindSpeed(float windSpeed) {
+    //    g_windSpeed = windSpeed;
+    //}
+    //
+    //void SetCrossWindDampingCoefficient(float crossWindDampingCoefficient) {
+    //    g_crossWindDampingCoefficient = crossWindDampingCoefficient;
+    //}
+    //
+    //void SetSmallWavesDampingCoefficient(float smallWavesDampingCoefficient) {
+    //    g_smallWavesDampingCoefficient = smallWavesDampingCoefficient;
+    //}
 
     glm::vec2 KVector(int x, int z, glm::uvec2 fftResolution, glm::vec2 patchSimSize) {
         return glm::vec2((x - fftResolution.x / 2.0f) * (2.0f * HELL_PI / patchSimSize.x), (z - fftResolution.y / 2.0f) * (2.0f * HELL_PI / patchSimSize.y));
     }
 
-    float PhillipsSpectrum(const glm::vec2& k, float amplitude, glm::vec2 windDir) {
+    float PhillipsSpectrum(const glm::vec2& k, FFTBand& fftBand) {
         const float lengthK = glm::length(k);
         const float lengthKSquared = lengthK * lengthK;
-        const float dotKWind = glm::dot(k / lengthK, windDir);
+        const float dotKWind = glm::dot(k / lengthK, fftBand.windDir);
         const float L = g_windSpeed * g_windSpeed / g_gravity;
 
-        float phillips = amplitude * expf(-1.0f / (lengthKSquared * L * L)) * dotKWind * dotKWind / (lengthKSquared * lengthKSquared);
+        float phillips = fftBand.amplitude * expf(-1.0f / (lengthKSquared * L * L)) * dotKWind * dotKWind / (lengthKSquared * lengthKSquared);
 
         if (dotKWind < 0.0f) {
-            phillips *= g_crossWindDampingCoefficient;
+            phillips *= fftBand.crossWindDampingCoefficient;
         }
 
-        return phillips * expf(-lengthKSquared * L * L * g_smallWavesDampingCoefficient);
+        return phillips * expf(-lengthKSquared * L * L * fftBand.smallWavesDampingCoefficient);
     }
 
 
@@ -117,7 +125,7 @@ namespace Ocean {
                     h0[idx] = { 0.0f, 0.0f };
                 }
                 else {
-                    float amp = sqrt(PhillipsSpectrum(k, fftBand.amplitude, fftBand.windDir)) * HELL_SQRT_OF_HALF;
+                    float amp = sqrt(PhillipsSpectrum(k, fftBand)) * HELL_SQRT_OF_HALF;
                     float a = normalDist(randomGen) * amp;
                     float b = normalDist(randomGen) * amp;
                     h0[idx] = { a, b };
@@ -129,14 +137,14 @@ namespace Ocean {
                 }
             }
         }
-        
+
         return h0;
     }
 
     const float GetDisplacementScale() {
         return g_dispScale;
     }
-    
+
     const float GetHeightScale() {
         return g_heightScale;
     }

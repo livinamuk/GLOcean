@@ -1,14 +1,43 @@
 #version 430 core
+#include "../common/lighting.glsl"
+//#include "../common/constants.glsl"
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(rgba8, binding = 0) uniform image2D outputImage;
 
 layout(binding = 0) uniform sampler2D WorldPositionTexture;
-layout(binding = 1) uniform sampler2D DisplacementTexture;
+layout(binding = 1) uniform sampler2D DisplacementTexture_band0;
+layout(binding = 2) uniform sampler2D DisplacementTexture_band1;
 
-uniform uvec2 u_fftGridSize;
-uniform float u_oceanModelMatrixScale;
 uniform float u_oceanOriginY;
+uniform int u_mode;
+uniform vec3 u_viewPos;
+
+struct FogRange {
+    float start;
+    float end;
+    float exponent;
+    vec3 color;
+};
+
+vec3 ApplyFog(vec3 color, vec3 worldPos, vec3 cameraPos, FogRange fog1, FogRange fog2) {
+    float dist = length(worldPos - cameraPos);
+
+    float factor1 = clamp((dist - fog1.start) / (fog1.end - fog1.start), 0.0, 1.0);
+    factor1 = 1.0 - exp(-fog1.exponent * factor1 * factor1);
+
+    float factor2 = clamp((dist - fog2.start) / (fog2.end - fog2.start), 0.0, 1.0);
+    factor2 = 1.0 - exp(-fog2.exponent * factor2 * factor2);
+
+    vec3 fogged1 = mix(color, fog1.color, factor1);
+    vec3 fogged2 = mix(color, fog2.color, factor2);
+
+    // You can blend the two results however you like
+    // Here, blend proportionally by distance between the two fog ranges
+    float blendFactor = clamp((dist - fog1.end) / (fog2.start - fog1.end), 0.0, 1.0);
+    return mix(fogged1, fogged2, blendFactor);
+}
 
 void main() {
 	ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);   
@@ -28,31 +57,59 @@ void main() {
         return;
     }
 
-    const float gridCellsPerWorldUnit = 1.0 / u_oceanModelMatrixScale;
-    const vec2 fftGridSize = vec2(u_fftGridSize);
-    const vec2 patchWorldSize = fftGridSize * u_oceanModelMatrixScale;
-    
-    vec2 bestGuessUV = fract(worldPosition.xz / patchWorldSize);
-    
-    float dispX = texture(DisplacementTexture, bestGuessUV).x;
-    float dispZ = texture(DisplacementTexture, bestGuessUV).z;
+    float fftResoltion_band0 = 512.0;
+    float fftResoltion_band1 = 512.0;
+    float patchSize_band0 = 8.0;
+    float patchSize_band1 = 13.123;
 
-    vec2 estimatedDisplacement = vec2(dispX, dispZ) / gridCellsPerWorldUnit;
+    highp vec2 uv_band0 = fract(worldPosition.xz / patchSize_band0);
+    highp vec2 uv_band1 = fract(worldPosition.xz / patchSize_band1);
+    
+    float displacementScale_band0 = patchSize_band0 / fftResoltion_band0;
+    float displacementScale_band1 = patchSize_band1 / fftResoltion_band1;
+    
+    const float gridCellsPerWorldUnit_band0 = 1.0 / displacementScale_band0;
+    const float gridCellsPerWorldUnit_band1 = 1.0 / displacementScale_band1;
+
+    // Estimate band 0 position
+    vec2 bestGuessUV = uv_band0;
+    float dispX = texture(DisplacementTexture_band0, bestGuessUV).x;
+    float dispZ = texture(DisplacementTexture_band0, bestGuessUV).z;
+    vec2 estimatedDisplacement = vec2(dispX, dispZ) / gridCellsPerWorldUnit_band0;
     vec2 estimatedWorldPosition = worldPosition.xz - estimatedDisplacement;
-    vec2 estimatedUV = fract(estimatedWorldPosition / patchWorldSize);
+    vec2 estimatedUV = fract(estimatedWorldPosition / patchSize_band0);
+    vec3 bestGuessWorldPos_band0 = texture(DisplacementTexture_band0, estimatedUV).xyz * displacementScale_band0;
+
+    // Estimate band 0 position
+    bestGuessUV = uv_band1;
+    dispX = texture(DisplacementTexture_band1, bestGuessUV).x;
+    dispZ = texture(DisplacementTexture_band1, bestGuessUV).z;
+    estimatedDisplacement = vec2(dispX, dispZ) / gridCellsPerWorldUnit_band1;
+    estimatedWorldPosition = worldPosition.xz - estimatedDisplacement;
+    estimatedUV = fract(estimatedWorldPosition / patchSize_band1);
+    vec3 bestGuessWorldPos_band1 = texture(DisplacementTexture_band1, estimatedUV).xyz * displacementScale_band1;
+
+    float height = mix(bestGuessWorldPos_band0.y, bestGuessWorldPos_band1.y, 0.5);
     
-    float height = texture(DisplacementTexture, estimatedUV).y;
+    height = bestGuessWorldPos_band0.y + bestGuessWorldPos_band1.y;
     
-    float waterHeight = (height * u_oceanModelMatrixScale) + u_oceanOriginY;
+    if (u_mode == 1) {
+        height = bestGuessWorldPos_band0.y;
+    }
+    if (u_mode == 2) {
+        height = bestGuessWorldPos_band1.y;
+    }
+
+    float waterHeight = (height) + u_oceanOriginY;
     bool isUnderwater = worldPosition.y < waterHeight;
     
     vec3 seaColor = vec3(0.286, 0.612, 0.576) * 0.05;
     
     if (isUnderwater) {
         vec3 finalColor = mix(lighting.rgb * seaColor, lighting.rgb, 0.75);
-        finalColor = vec3(1 ,0, 0);
-        //finalColor = lighting.rgb * seaColor;
-        imageStore(outputImage, pixelCoords, vec4(finalColor, 1));
+        //finalColor = vec3(1 ,0, 0);
+        finalColor = lighting.rgb * seaColor;
+        //imageStore(outputImage, pixelCoords, vec4(finalColor, 1));
     }
 
 
@@ -63,4 +120,74 @@ void main() {
     //seaColor = lighting.rgb + vec3(0.1);
     //lighting.rgb = mix(lighting.rgb, seaColor, edge);
     //imageStore(outputImage, pixelCoords, vec4(lighting.rgb, 1));
+    
+    float viewDist = length(worldPosition - u_viewPos);
+     
+
+    vec3 final = vec3(1,0,0);
+    if (viewDist > 4.9) {
+        final = vec3(0, 1,0);
+    }
+
+    FogRange shallowFog;
+    shallowFog.start = 0;
+    shallowFog.end = 20;
+    shallowFog.exponent = 1.5;
+    shallowFog.color = vec3(0.2, 0.6, 0.7);
+
+    FogRange deepFog;
+    deepFog.start = 20;
+    deepFog.end = 1000;
+    deepFog.exponent = 2.5;
+    deepFog.color = vec3(0.0, 0.1, 0.2);
+
+
+//    vec3 finalColor = ApplyFog(lighting.rgb, worldPosition, u_viewPos, shallowFog, deepFog);
+//    final = finalColor;
+//
+//     imageStore(outputImage, pixelCoords, vec4(final, 1));
+
+    vec3 underWaterColor = lighting.rgb;
+    underWaterColor = mix(lighting.rgb, lighting.rgb * WATER_COLOR, 0.7);
+    
+    vec3 u_fogColor = vec3(0.00326, 0.00217, 0.00073);
+     u_fogColor = vec3(WATER_COLOR * 0.5);
+    
+     float u_fogStartDistance = 5.0;
+     float u_fogEndDistance = 50.0;
+     float u_fogExponent = 0.25;
+    float fogRange = u_fogEndDistance - u_fogStartDistance;
+    float normDist = (viewDist - u_fogStartDistance) / max(fogRange, 0.0001);
+    normDist = clamp(normDist, 0.0, 1.0);
+    float fogEffect = pow(normDist, u_fogExponent);
+    float fogFactor = 1.0 - fogEffect;
+
+    // Apply the fog using the non-linear factor
+    underWaterColor = mix(u_fogColor, underWaterColor, fogFactor);
+
+
+
+
+    vec3 underWaterLighting = vec3(0);
+
+        float viewDistance = length(worldPosition.xyz - u_viewPos);
+        float mappedViewDistance = MapRange(viewDist, 0, 5, 0, 1.0);
+                 
+        vec3 fogColor = vec3(0.2,0.6, 1); 
+        vec3 waterColor = vec3(0.85, 1.0, 0.95);
+        fogColor = waterColor;
+
+        mappedViewDistance = clamp(mappedViewDistance, 0.0, 1.0);
+        vec3 fogResult = fogColor * mappedViewDistance * 0.15;
+        fogResult = clamp(fogResult, 0, 1);
+
+        vec3 firstPass = mix(lighting.rgb, fogResult, mappedViewDistance * 0.5); 
+
+   // float fogColor = clamp(1.0 - exp(-u_fogDensity * u_fogDensity * viewDist * viewDist), 0.0, 1.0);
+
+   underWaterColor = vec3(firstPass);
+   
+   // underWaterColor = mix(lighting.rgb, lighting.rgb * WATER_COLOR, 0.25);
+
+ //imageStore(outputImage, pixelCoords, vec4(underWaterColor, 1));
 }

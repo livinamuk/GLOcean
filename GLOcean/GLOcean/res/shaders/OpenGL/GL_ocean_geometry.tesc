@@ -7,10 +7,10 @@ layout(location = 0) out vec3 tcPosition[];
 uniform vec3 u_viewPos;
 uniform mat4 u_model;
 
-const float maxTessLevel = 16.0;
-const float minTessLevel = 4.0;
+const float maxTessLevel = 32.0;
+const float minTessLevel = 1.0;
 const float startFadeDist = 2.0;
-const float endFadeDist = 70.0;
+const float endFadeDist = 30.0;
 const float minPossibleLevel = 1.0;
 const float maxPossibleLevel = 64.0;
 

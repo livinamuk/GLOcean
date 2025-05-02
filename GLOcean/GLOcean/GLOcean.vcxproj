@@ -51,6 +51,7 @@
     <None Include="res\shaders\OpenGL\gl_hair_depth_peel.frag" />
     <None Include="res\shaders\OpenGL\gl_hair_depth_peel.vert" />
     <None Include="res\shaders\OpenGL\gl_hair_layer_composite.comp" />
+    <None Include="res\shaders\OpenGL\GL_ocean_surface_composite.comp" />
     <None Include="res\shaders\OpenGL\GL_ocean_geometry.tesc" />
     <None Include="res\shaders\OpenGL\GL_ocean_geometry.tese" />
     <None Include="res\shaders\OpenGL\GL_ocean_wireframe.frag" />

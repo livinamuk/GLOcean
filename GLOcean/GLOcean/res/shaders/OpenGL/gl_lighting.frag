@@ -48,13 +48,21 @@ void main() {
 		
     vec3 directLighting = GetDirectLighting(lightPosition, lightColor, lightRadius, lightStrength, normal, WorldPos.xyz, baseColor.rgb, roughness, metallic, viewPos);
 
-    float ambientIntensity = 0.000;
-    vec3 ambientColor = baseColor.rgb * lightColor;
+    // Ambient light
+    vec3 amibentLightColor = vec3(1, 0.98, 0.94);
+    float ambientIntensity = 0.001;
+    //ambientIntensity = 0.0025;
+    vec3 ambientColor = baseColor.rgb * amibentLightColor;
     vec3 ambientLighting = ambientColor * ambientIntensity;
+
+    // Ambient hack
+	float factor = min(1, 1 - metallic * 1.0);
+	ambientLighting *= (1.0) * vec3(factor);
+
 
     float finalAlpha = baseColor.a;
     
-    vec3 finalColor = directLighting.rgb;// + ambientLighting;
+    vec3 finalColor = directLighting.rgb + ambientLighting;
 
     // Tone mapping
 	finalColor = mix(finalColor, Tonemap_ACES(finalColor), 1.0);

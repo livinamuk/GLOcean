@@ -17,3 +17,13 @@ vec3 GetDirectLighting(vec3 lightPos, vec3 lightColor, float radius, float stren
 	vec3 brdf = microfacetBRDF(lightDir, viewDir, Normal, baseColor, metallic, fresnelReflect, roughness, WorldPos);
 	return brdf * irradiance * clamp(lightColor, 0, 1);
 }
+
+vec3 ApplyFog(vec3 color, float dist, vec3 fogColor, float fogStart, float fogEnd) {
+    float fogFactor = clamp((dist - fogStart) / (fogEnd - fogStart), 0.0, 1.0);
+    return mix(color.rgb, fogColor, fogFactor);
+}
+
+float MapRange(float inValue, float minInRange, float maxInRange, float minOutRange, float maxOutRange) {
+    float x = (inValue - minInRange) / (maxInRange - minInRange);
+    return minOutRange + (maxOutRange - minOutRange) * x;
+}

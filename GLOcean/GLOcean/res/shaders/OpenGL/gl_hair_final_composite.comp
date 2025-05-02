@@ -7,7 +7,8 @@ layout(rgba8, binding = 0) uniform image2D outputImage;
 void main() {
 	ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);   
     ivec2 outputImageSize = imageSize(outputImage);
-    vec2 uv_screenspace = vec2(pixelCoords) / vec2(outputImageSize);
+    //vec2 uv_screenspace = vec2(pixelCoords) / vec2(outputImageSize);
+    vec2 uv_screenspace = (vec2(pixelCoords) + 0.5) / vec2(outputImageSize);
 
     // Don't process out of bounds pixels
     if (pixelCoords.x >= outputImageSize.x || pixelCoords.y >= outputImageSize.y) {
